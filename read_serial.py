@@ -37,11 +37,12 @@ def writeToCSV(arr: np.array, filename: str):
         np.savetxt(f, arr, delimiter=',', fmt="%.6f")
 
 # Usage:
-#   read_serial.py <seconds> <outfile>
+#   read_serial.py <COM port> <seconds> <outfile>
 if __name__ == "__main__":
     
-    seconds = sys.argv[1]
-    outfile = sys.argv[2]
+    port    = sys.argv[1]
+    seconds = sys.argv[2]
+    outfile = sys.argv[3]
     
     raw = readSerialFor(port, seconds)
         
