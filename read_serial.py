@@ -21,23 +21,6 @@ def readSerialFor(port, seconds):
 
     return map(lambda line: line.decode("utf-8").strip(), output[1:]) # lose the first line in case we read it mid-broadcast
 
-# Returns the WiFi UDP output on the given port seen over the given length of time
-# TODO: THIS HAS NOT BEEN TESTED
-def readUDPfor(seconds):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(('', 4000))
-    
-    output = []
-    seconds = int(seconds)
-    startTime = time.time()
-    
-    while time.time() - startTime < seconds:
-        data, addr = sock.recvfrom(512)
-        output.append(data)
-    
-    sock.close()
-    
-    return map(lambda line: line.decode("utf-8").strip(), output[1:])
 
 # Filters out the non-data rows and converts to a numpy array
 def rawToArray(output: list) -> np.array:
@@ -54,25 +37,13 @@ def writeToCSV(arr: np.array, filename: str):
         np.savetxt(f, arr, delimiter=',', fmt="%.6f")
 
 # Usage:
-#   read_serial.py ip <ipaddr> <port> <seconds> <outfile>
-#   read_serial.py com <port> <seconds> <outfile>
+#   read_serial.py <seconds> <outfile>
 if __name__ == "__main__":
-    mode = sys.argv[1]
     
-    if mode == "ip":
-        ip = sys.argv[2]
-        port = sys.argv[3]
-        seconds = sys.argv[4]
-        outfile = sys.argv[5]
-        
-        raw = readUDPfor(seconds)
+    seconds = sys.argv[1]
+    outfile = sys.argv[2]
     
-    elif mode == "com":
-        port = sys.argv[2] 
-        seconds = sys.argv[3]
-        outfile = sys.argv[4]
-        
-        raw = readSerialFor(port, seconds)
+    raw = readSerialFor(port, seconds)
         
     writeToCSV(rawToArray(raw), outfile)
 

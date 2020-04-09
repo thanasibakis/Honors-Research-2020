@@ -38,6 +38,7 @@ integ <- function(col, time)
 	# maybe use the real dt for each sample, not this avg dt calcuated using the sample rate
 }
 
+# Get the principal components of the given columns of the dataset
 PCs <- function(data, ...)
 {
 	cols <- enquos(...)
@@ -45,16 +46,32 @@ PCs <- function(data, ...)
 	data %>%
 		select(!!!cols) %>%
 		prcomp() %>%
-		extract2("x") %>%
+		magrittr::extract2("x") %>%
 		as_tibble() %>%
 		mutate(time.sec = data$time.sec)
+}
+
+# Performs a cross-correlation to search for matches of a template signal
+# in a larger signal
+find_matches <- function(data, template)
+{
+	template <- c(template, rep(0, length(data) - length(template)))
+
+	correlation <- ccf(data, template, lag.max = length(data))
+	plot(correlation)
+
+	peaks <- quantmod::findPeaks(correlation$acf)
+	lags <- correlation$lag[peaks]
+
+	lags[lags > 0]
 }
 
 ####################################
 
 
-setwd("C:/Users/thana/Documents/Research")
-#system("python3 read_serial.py ip x x 20 output.csv") # autoname file with datetime
+setwd("C:/Users/thana/Documents/Honors-Research-2020")
+#system("python3 read_serial.py 20 output.csv")
+# TODO: autoname file with datetime
 
 data <- read.csv("violinbowingdata/fullbow.csv") %>%
 	mutate(time.sec = Timestamp) %>%
@@ -75,30 +92,35 @@ plot.row(data, ax, ay, az) /
 	plot.row(pca, PC1, PC2, PC3)
 
 
+# TODO:
+# Get the first eigenvector (corresponding to PC1)
+# Get a plane perpendicular to it
+# Project x,y,z onto the plane
+# to measure if the bowing is close to a straight line
 
 
 # Recognition
 
-sample <- pca %>%
-	dplyr::filter(time.sec > 1580 & time.sec < 1583)
-
-plot.row(sample, PC1)
-
-bow.start <- sample %>%
+bow.start <- pca %>%
+	filter(time.sec > 1580 & time.sec < 1583) %>%
 	top_n(1, -PC1) %>%
 	pull(time.sec)
 
-bow.end <- sample %>%
+bow.end <- pca %>%
+	filter(time.sec > 1580 & time.sec < 1583) %>%
 	top_n(1, PC1) %>%
 	pull(time.sec)
 
-bow <- sample %>%
-	dplyr::filter(time.sec >= bow.start & time.sec <= bow.end)
+# Let's find similar instances of this up-motion
+bow <- pca %>%
+	filter(time.sec >= bow.start & time.sec <= bow.end) %>%
+	select(PC1, time.sec)
 
+plot.row(pca, PC1) /
 plot.row(bow, PC1)
 
-template <- diff(bow$PC1)
+lags <- find_matches(pca$PC1, bow$PC1)
+locations <- pca$time.sec[lags]
 
-
-
-# how in the world to convolve to match??
+plot.row(pca, PC1) +
+	geom_vline(xintercept = locations, col = "dodgerblue4", alpha = 0.7, size = 1)
