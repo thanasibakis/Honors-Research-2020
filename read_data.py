@@ -1,9 +1,11 @@
 import numpy as np
 import serial  # pySerial package
+import serial.tools.list_ports
 import subprocess
 import time
 import sys
 import socket
+from datetime import datetime
 
 BAUD = 115200
 COLUMNS = ["ax", "ay", "az", "ex", "ey", "ez", "gx", "gy", "gz", "qw", "qx", "qy", "qz", "mx", "my", "mz",
@@ -21,6 +23,22 @@ def readSerialFor(port, seconds):
 
     return map(lambda line: line.decode("utf-8").strip(), output[1:]) # lose the first line in case we read it mid-broadcast
 
+# Returns the serial output on the given port seen over the given length of time
+def readUDPFor(ip, port, seconds):
+    output = []
+    seconds = int(seconds)
+    startTime = time.time()
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((ip, port))
+
+    while time.time() - startTime < seconds:
+        data, _ = sock.recvfrom(1024)
+        output.append(data)
+
+    return map(lambda line: line.decode("utf-8").strip(), output)
+
+
 
 # Filters out the non-data rows and converts to a numpy array
 def rawToArray(output: list) -> np.array:
@@ -37,17 +55,16 @@ def writeToCSV(arr: np.array, filename: str):
         np.savetxt(f, arr, delimiter=',', fmt="%.6f")
 
 # Usage:
-#   read_serial.py <COM port> <seconds> <outfile>
+#   read_data.py <ip> <port> <seconds>
 if __name__ == "__main__":
     
-    port    = sys.argv[1]
-    seconds = sys.argv[2]
-    outfile = sys.argv[3]
+    ip      = sys.argv[1] # "192.168.4.2"
+    port    = int(sys.argv[2]) # 4000
+    seconds = int(sys.argv[3])
+    outfile = str(datetime.now()).replace(':', '.') + ".csv"
     
-    raw = readSerialFor(port, seconds)
+    #port    = serial.tools.list_ports.comports()[0].device
+    #raw = readSerialFor(port, seconds)
+    raw = readUDPFor(ip, port, seconds)
         
     writeToCSV(rawToArray(raw), outfile)
-
-### Tips ###
-# Get COM port num: "powershell.exe [System.IO.Ports.SerialPort]::getportnames()"
-# Get IP address: arp -a

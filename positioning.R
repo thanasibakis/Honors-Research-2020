@@ -1,79 +1,28 @@
 library(tidyverse)
 library(patchwork)
 
+source("helpers.R")
 
-# Easily plot each several vectors in a row of line plots
-# eg plot.row(data, col1, col2, col3)
-plot.row <- function(data, ...)
-{
-	plot <- function(col)
-	{
-		data %>%
-			ggplot(aes(time.sec, !!col)) +
-			geom_line() +
-			ylim(-bound, bound)
-	}
-
-	cols <- enquos(...)
-
-	bound <- data %>%
-		select(!!!cols) %>%
-		summarize_all( ~ max(abs(.))) %>%
-		max() # for the AccelStatus's sake
-
-	Reduce("+", lapply(cols, plot))
-}
-
-# Filter and integrate a column (high pass filter removes low freq noise,
-#   aka the constant drift that the sensor reports... keeping just the interesting motion we do)
-#https://forums.adafruit.com/viewtopic.php?f=8&t=81842&hilit=bno055+position&start=0#p414708
-integ <- function(col, time)
-{
-	samp.rate <- length(col) / (max(time) - min(time))
-	#coef = butter(5, 0.36 * 2 / samp.rate, "high")
-	coef <- signal::butter(5, 0.0065, "high") # sample rate is known 100 hz from loop delay
-	col_filtered <- signal::filtfilt(coef$b, coef$a, col)
-
-	return(cumsum(col_filtered / samp.rate)) # aka sum(column * dtime), which is an integral :)
-	# maybe use the real dt for each sample, not this avg dt calcuated using the sample rate
-}
-
-# Get the principal components of the given columns of the dataset
-PCs <- function(data, ...)
-{
-	cols <- enquos(...)
-
-	data %>%
-		select(!!!cols) %>%
-		prcomp() %>%
-		magrittr::extract2("x") %>%
-		as_tibble() %>%
-		mutate(time.sec = data$time.sec)
-}
-
-# Performs a cross-correlation to search for matches of a template signal
-# in a larger signal
-find_matches <- function(data, template)
-{
-	template <- c(template, rep(0, length(data) - length(template)))
-
-	correlation <- ccf(data, template, lag.max = length(data))
-	plot(correlation)
-
-	peaks <- quantmod::findPeaks(correlation$acf)
-	lags <- correlation$lag[peaks]
-
-	lags[lags > 0]
-}
 
 ####################################
 
 
 setwd("C:/Users/thana/Documents/Honors-Research-2020")
-#system("python3 read_serial.py 20 output.csv")
-# TODO: autoname file with datetime
+#system("python3 read_serial.py 20")
 
-data <- read.csv("violinbowingdata/fullbow.csv") %>%
+data <- read.csv("violinbowingdata/fullbow.csv")
+
+R <- rot.mat(data$qw, data$qx, data$qy, data$qz)
+
+accel <- data %>%
+	select(ax, ay, az) %>%
+	as.matrix() %>%
+	rotate(R)
+
+data <- data %>%
+	mutate(lax = accel[, "ax"],
+		   lay = accel[, "ay"],
+		   laz = accel[, "az"]) %>%
 	mutate(time.sec = Timestamp) %>%
 	mutate(vx = integ(ax, time.sec),
 		   vy = integ(ay, time.sec),
@@ -83,23 +32,60 @@ data <- read.csv("violinbowingdata/fullbow.csv") %>%
 		    z = integ(vz, time.sec)) %>%
 	mutate( d = sqrt(x^2 + y^2 + z^2))
 
-pca <- PCs(data, x, y, z)
+
+pca.info <- PCA(data, x, y, z)
+pca.data <- pca.info[["components"]]
+pca.matrix <- pca.info[["rotation"]] # the columns are eigenvectors
+
 
 plot.row(data, ax, ay, az) /
 	plot.row(data, vx, vy, vz) /
 	plot.row(data, x, y, z) /
 	plot.row(data, d) /
-	plot.row(pca, PC1, PC2, PC3)
+	plot.row(pca.data, PC1, PC2, PC3)
 
 
-# TODO:
+### HELP ###
+
+# is it normal for qwxy to be 0? only qz has stuff
+
+plot.row(data, ax, ay, az) /
+	plot.row(data, lax, lay, laz)
+
+# note i did not switch out ax/... for lax/... in the integration yet
+
+###
+
+
 # Get the first eigenvector (corresponding to PC1)
 # Get a plane perpendicular to it
 # Project x,y,z onto the plane
 # to measure if the bowing is close to a straight line
 
+# https://math.stackexchange.com/questions/1872783/projection-onto-a-plane
+eig1 <- pca.matrix[, 1]
 
-# Recognition
+P <- c(eig1[2], -eig1[1], 0)
+Q <- c(eig1[1]*eig1[3], eig1[2]*eig1[3], -(eig1[1]^2 + eig1[2]^2))
+
+P <- P / sqrt(sum(P^2))
+Q <- Q / sqrt(sum(Q^2))
+
+proj.mat <- matrix(c(P, Q), byrow = F, ncol = 2)
+
+pts.on.plane <- as.matrix(select(data, x, y, z)) %*% proj.mat
+plot(pts.on.plane)
+
+
+
+
+
+
+
+
+
+
+# Pattern Recognition
 
 bow.start <- pca %>%
 	filter(time.sec > 1580 & time.sec < 1583) %>%
