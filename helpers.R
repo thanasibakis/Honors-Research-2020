@@ -34,7 +34,7 @@ integ <- function(col, time)
 	# maybe use the real dt for each sample, not this avg dt calcuated using the sample rate
 }
 
-# Get the principal components of the given columns of the dataset
+# Get the principal components and rotation matrix of the given columns of the dataset
 PCA <- function(data, ...)
 {
 	cols <- enquos(...)
