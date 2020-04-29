@@ -8,7 +8,7 @@ import socket
 from datetime import datetime
 
 BAUD = 115200
-COLUMNS = ["ax", "ay", "az", "ex", "ey", "ez", "gx", "gy", "gz", "qw", "qx", "qy", "qz", "mx", "my", "mz",
+COLUMNS = ["ax", "ay", "az", "ex", "ey", "ez", "gx", "gy", "gz", "mx", "my", "mz", "qw", "qx", "qy", "qz", 
            "BatteryPercent", "SystemStatus", "GyroStatus", "AccelStatus", "MagStatus", "Timestamp", "SequenceNum"]
 
 # Returns the serial output on the given port seen over the given length of time

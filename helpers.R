@@ -26,7 +26,7 @@ plot.row <- function(data, ...)
 integ <- function(col, time)
 {
 	samp.rate <- length(col) / (max(time) - min(time))
-	#coef = butter(5, 0.36 * 2 / samp.rate, "high")
+	#coef = signal::butter(5, 0.36 * 2 / samp.rate, "high")
 	coef <- signal::butter(5, 0.0065, "high") # sample rate is known 100 hz from loop delay
 	col_filtered <- signal::filtfilt(coef$b, coef$a, col)
 
@@ -76,7 +76,7 @@ rot.mat <- function(qw, qx, qy, qz)
 	qy <- qy / q.norm
 	qz <- qz / q.norm
 
-	R = array(dim = c(3, 3, length(qw)))
+	R <- array(dim = c(3, 3, length(qw)))
 	R[1, 1, ] <- 1 - 2*(qy^2 + qz^2)
 	R[2, 1, ] <- 2*(qx*qy + qz*qw)
 	R[3, 1, ] <- 2*(qx*qz - qy*qw)
