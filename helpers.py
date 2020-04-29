@@ -1,7 +1,58 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import sklearn.decomposition
-from scipy import signal    
+from scipy import signal
+
+# Projects vector of 3D points onto a plane perpendicular to vec (returning 2D points)
+def project_3D_to_2D(data, vec):
+    P = np.array([vec[1], -vec[0], 0])
+    Q = np.array([vec[0] * vec[2], vec[1] * vec[2], -(vec[0] ** 2 + vec[1] ** 2)])
+
+    P /= np.sqrt(np.sum(P ** 2))
+    Q /= np.sqrt(np.sum(Q ** 2))
+
+    proj_mat = np.vstack((P, Q)).T
+    pts_on_plane = np.matmul(data, proj_mat)
+
+    return pts_on_plane
+
+
+def plot_row(axes, grid_row, data, *cols):
+    cols = list(cols)
+    bound = data[cols].abs().max().max() * 1.1 # one max to apply by col, then take the max of those
+
+    for data_col, grid_col in zip(cols, range(len(cols))):
+        sns.lineplot(data=data, x="time_sec", y=data_col, ax=axes[grid_row, grid_col])
+        axes[grid_row, grid_col].set_ylim((-bound, bound))
+
+# Processes acceleration data to obtain position data
+def prepare_position_data(data):
+    R = rot_mat(data.qw, data.qx, data.qy, data.qz)
+    accel = rotate(data[["ax", "ay", "az"]], R)
+
+    data = data.assign(
+        lax=accel.ax,
+        lay=accel.ay,
+        laz=accel.az,
+        time_sec=data.Timestamp - data.Timestamp[0]
+    )
+    data = data.assign(
+        vx=integ(data.lax, data.time_sec),
+        vy=integ(data.lay, data.time_sec),
+        vz=integ(data.laz, data.time_sec)
+    )
+    data = data.assign(
+        x=integ(data.vx, data.time_sec),
+        y=integ(data.vy, data.time_sec),
+        z=integ(data.vz, data.time_sec)
+    )
+    data = data.assign(
+        d=np.sqrt(data.x**2 + data.y**2 + data.z**2)
+    )
+
+    return data
 
 # Filter and integrate a column (high pass filter removes low freq noise,
 #   aka the constant drift that the sensor reports... keeping just the interesting motion we do)
