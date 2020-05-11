@@ -1,6 +1,5 @@
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
-from pyqtgraph.ptime import time
 
 import numpy as np
 from multiprocessing import Process, Queue
@@ -10,15 +9,18 @@ from datetime import datetime
 import sensor
 import positioning
 
+WINDOW_TITLE = "MUGIC Plot"
 HISTORY = 1000              # number of observations to display
 SAMPLE_SIZE = 50            # number of observations to fetch from sensor before integrating/filtering
-PLOT_LOOP_INTERVAL = 100    # (ms) how often to plot new data
+PLOT_LOOP_INTERVAL = 0      # (ms) how often to plot new data
+DEBUG_ON = False
 
 def debug(*args):
-    now = datetime.now()
-    now_str = f"{now.hour}:{now.minute}:{now.second}"
+    if DEBUG_ON:
+        now = datetime.now()
+        now_str = f"{now.hour}:{now.minute}:{now.second}"
 
-    print(now_str, *args)
+        print(now_str, *args)
 
 def analyze_data(raw_data):
     data = sensor.raw_to_dataframe(raw_data) \
@@ -68,10 +70,9 @@ def plot_loop():
         accumulated_data["projected_Y"] = np.append(accumulated_data["projected_Y"], new_data["projected_Y"])[-HISTORY:]
 
         debug("\t", "Updating plot with data from", new_data["time_sec"][0], "to", new_data["time_sec"][-1])
-
-        #curve.setData(accumulated_data["PC1"]) # curve = window.plot()
-        #app.processEvents()
-        window.plot(accumulated_data["time_sec"], accumulated_data["PC1"], clear=True)
+        curves[0].setData(accumulated_data["time_sec"], accumulated_data["PC1"])
+        curves[1].setData(accumulated_data["projected_X"], accumulated_data["projected_Y"])
+        app.processEvents()
 
     except Empty:
         # No more data is ready yet, let's not hold up the main UI
@@ -85,6 +86,8 @@ def close_app():
 
     
 if __name__ == "__main__":
+
+    # TODO: maybe convert this to fixed-size lists, in case appending is too slow
     accumulated_data = {
         "time_sec": np.array([]),
         "PC1": np.array([]),
@@ -103,7 +106,8 @@ if __name__ == "__main__":
     debug("Creating GUI")
     app = QtGui.QApplication([])
     app.aboutToQuit.connect(close_app)
-    window = pg.plot(title="Interesting Title")
+    window = pg.GraphicsWindow(title=WINDOW_TITLE)
+    curves = [ window.addPlot().plot() for _ in range(2) ]
 
     timer=QtCore.QTimer()
     timer.timeout.connect(plot_loop)
