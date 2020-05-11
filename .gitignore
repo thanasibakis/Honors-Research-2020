@@ -1,6 +1,2 @@
-.Rproj.user/
-.Rhistory
-*.Rproj
-.vscode/settings.json
-.vscode/launch.json
+.vscode/*
 *.pyc
