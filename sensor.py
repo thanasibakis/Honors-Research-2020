@@ -1,11 +1,10 @@
 import pandas as pd
 import pickle
 import serial  # pySerial package
-import serial.tools.list_ports
-import subprocess
-import time
-import sys
 import socket
+import subprocess
+import sys
+import time
 from datetime import datetime
 
 
@@ -40,7 +39,13 @@ class DataStream:
 class UDPStream(DataStream):
     def __init__(self, ip=IP, port=UDP_PORT):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.socket.bind((ip, port))
+
+        try:
+            self.socket.bind((ip, port))
+
+        except OSError:
+            print("Could not find the device.")
+            sys.exit()
 
     def readline(self):
         data, addr = self.socket.recvfrom(1024)

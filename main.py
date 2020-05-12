@@ -13,7 +13,7 @@ import positioning
 # Config options
 WINDOW_TITLE = "MUGIC Plot"
 HISTORY = 1000                  # number of observations to display
-SAMPLE_SIZE = 50                # number of observations to fetch from sensor before integrating/filtering
+SAMPLE_SIZE = 30                # number of observations to fetch from sensor before integrating/filtering
 PLOT_LOOP_INTERVAL = 0          # (ms) how often to plot new data
 DEBUG_LEVEL = 1                 # Level 1: tracking movement of the data
                                 # Level 2: also tracking GUI activity
@@ -94,6 +94,10 @@ def plot_loop():
               round(metrics["data_analysis"]["sum_time_spent"] / metrics["data_analysis"]["count"], 3), "sec")
         # then discard the first 80 to plot only the new ones
 
+        # Plot x-axis correction, see the declaration of accumulated_data
+        if (accumulated_data["needs_initializing"]):
+            accumulated_data["time_sec"][:] = new_data["time_sec"][0]
+            accumulated_data["needs_initializing"] = False
 
         accumulated_data["time_sec"] = np.roll(accumulated_data["time_sec"], -SAMPLE_SIZE)
         accumulated_data["time_sec"][-SAMPLE_SIZE: ] = new_data["time_sec"]
@@ -132,7 +136,8 @@ def close_app():
     
 if __name__ == "__main__":
     accumulated_data = {
-        "time_sec":     np.zeros((HISTORY,)), # TODO: instead of 0, this value should be the value of the first timestamp received, otherwise the plot axis stretches to show 0 for a while
+        "needs_initializing": True,                 # on the first data collection, we need to change all the 0s in time_sec to the first-seen timestamp value, or else the plot is no good until the time_sec buffer overwrites every 0
+        "time_sec":     np.zeros((HISTORY,)),
         "PC1":          np.zeros((HISTORY,)),
         "projected_X":  np.zeros((HISTORY,)),
         "projected_Y": np.zeros((HISTORY,))
