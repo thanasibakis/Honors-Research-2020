@@ -1,4 +1,5 @@
 import pandas as pd
+import pickle
 import serial  # pySerial package
 import serial.tools.list_ports
 import subprocess
@@ -42,7 +43,9 @@ class UDPStream(DataStream):
         self.socket.bind((ip, port))
 
     def readline(self):
-        return self.socket.recvfrom(1024)
+        data, addr = self.socket.recvfrom(1024)
+
+        return data
 
     def close(self):
         self.socket.close()
@@ -58,28 +61,34 @@ class SerialStream(DataStream):
     def close(self):
         self.connection.close()
 
-# Simulates a sensor from an already-processed CSV output
+# Simulates a sensor from previously-saved raw data (a pickled list of bytes)
 class SimulatedStream(DataStream):
-    def __init__(self, csvpath): 
-        self.data = pd.read_csv(csvpath)[COLUMNS]
+    def __init__(self, filepath="simdata.pckl", delay_ms=10):
+        with open(filepath, 'rb') as f:
+            self.data = pickle.load(f)
+        
         self.row_index = 0
+        self.delay_sec = delay_ms / 1000
 
     def readline(self):
-        time.sleep(0.010) # seconds
+        time.sleep(self.delay_sec)
 
-        row = self.data.iloc[self.row_index,:]
-        self.row_index = (self.row_index + 1) % self.data.shape[0]
+        row = self.data[self.row_index]
+        self.row_index = (self.row_index + 1) % len(self.data)
 
-        return str("mugicdata " + ' '.join(row.values.astype(str))).encode("utf-8")
+        return row
 
 
-def raw_to_dataframe(raw_data: list) -> pd.DataFrame:
-    decoded_output = [line.decode("utf-8").strip() for line in raw_data]
+def raw_to_dataframe(raw_data: [bytes]) -> pd.DataFrame:
+    rows = []
 
-    # Keep only lines with mugicdataprefix, but lose the prefix
-    dataMatrix = [ line.split(' ')[1:] for line in decoded_output if line.startswith("mugicdata") ]
+    for line in raw_data:
+        line = line.decode("utf-8").strip()
 
-    return pd.DataFrame(dataMatrix, dtype="double", columns = COLUMNS)
+        if line.startswith("mugicdata"): # Keep only lines with mugicdata prefix
+            rows.append(line.split(' ')[1:]) # but lose that prefix
+
+    return pd.DataFrame(rows, dtype="double", columns = COLUMNS)
 
 
 

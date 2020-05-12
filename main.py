@@ -5,20 +5,43 @@ import numpy as np
 from multiprocessing import Process, Queue
 from queue import Empty
 from datetime import datetime
+import time
 
 import sensor
 import positioning
 
+# Config options
 WINDOW_TITLE = "MUGIC Plot"
-HISTORY = 1000              # number of observations to display
-SAMPLE_SIZE = 50            # number of observations to fetch from sensor before integrating/filtering
-PLOT_LOOP_INTERVAL = 0      # (ms) how often to plot new data
-DEBUG_ON = False
+HISTORY = 1000                  # number of observations to display
+SAMPLE_SIZE = 50                # number of observations to fetch from sensor before integrating/filtering
+PLOT_LOOP_INTERVAL = 0          # (ms) how often to plot new data
+DEBUG_LEVEL = 1                 # Level 1: tracking movement of the data
+                                # Level 2: also tracking GUI activity
+assert HISTORY > SAMPLE_SIZE    # we make this assumption
 
-def debug(*args):
-    if DEBUG_ON:
+
+# Metrics
+metrics = {
+    "data_retrievals": {
+        "sum_time_spent": 0,
+        "count": 0
+    },
+
+    "plot_updates": {
+        "count": 0
+    },
+
+    "data_analysis": {
+        "sum_time_spent": 0,
+        "count": 0
+    }
+}
+
+
+def debug(level, *args):
+    if DEBUG_LEVEL >= level:
         now = datetime.now()
-        now_str = f"{now.hour}:{now.minute}:{now.second}"
+        now_str = f"{now.hour:2d}:{now.minute:2d}:{now.second:2d}"
 
         print(now_str, *args)
 
@@ -42,68 +65,89 @@ def analyze_data(raw_data):
 
     return new_data
 
-def retrieve_new_data(queue, stream):
-   while True:
-       debug("Retrieving data from stream")
-       raw_data = stream.readlines(n=SAMPLE_SIZE)
+def retrieve_new_data(data_queue, metrics_queue, stream):
+    while True:
+        start = time.time()
+        raw_data = stream.readlines(n=SAMPLE_SIZE)
+        elapsed = time.time() - start
 
-       # keep track of rate of arrival
+        metrics["data_retrievals"]["sum_time_spent"] += elapsed
+        metrics["data_retrievals"]["count"] += 1
+        debug(1, "Retrieved data from stream,\t", round(elapsed, 3), "sec, \tavg", round(metrics["data_retrievals"]["sum_time_spent"] / metrics["data_retrievals"]["count"], 3), "sec")
 
-       debug("\t", "Sending data to queue")
-       queue.put(raw_data)
+        data_queue.put(raw_data)
 
 
 def plot_loop():
     try:
-        debug("Retrieving data from queue")
         raw_data = data_queue.get_nowait()
 
-        # run analyze on the last 160 samples... the 80 new ones and the 80 most recent old ones
+        # TODO: run analyze on the last 160 samples... the 80 new ones and the 80 most recent old ones
         # bc the filter should see some overlap to anchor you
-        debug("\t", "Analyzing", len(raw_data), "observations")
+        start = time.time()
         new_data = analyze_data(raw_data)
+        elapsed = time.time() - start
+
+        metrics["data_analysis"]["sum_time_spent"] += elapsed
+        metrics["data_analysis"]["count"] += 1
+        debug(1, "Analyzed", len(raw_data), "observations,\t", round(elapsed, 3), "sec, \tavg",
+              round(metrics["data_analysis"]["sum_time_spent"] / metrics["data_analysis"]["count"], 3), "sec")
         # then discard the first 80 to plot only the new ones
 
-        accumulated_data["time_sec"] = np.append(accumulated_data["time_sec"], new_data["time_sec"])[-HISTORY:] # only keep last 1000
-        accumulated_data["PC1"] = np.append(accumulated_data["PC1"], new_data["PC1"])[-HISTORY:]
-        accumulated_data["projected_X"] = np.append(accumulated_data["projected_X"], new_data["projected_X"])[-HISTORY:]
-        accumulated_data["projected_Y"] = np.append(accumulated_data["projected_Y"], new_data["projected_Y"])[-HISTORY:]
 
-        debug("\t", "Updating plot with data from", new_data["time_sec"][0], "to", new_data["time_sec"][-1])
+        accumulated_data["time_sec"] = np.roll(accumulated_data["time_sec"], -SAMPLE_SIZE)
+        accumulated_data["time_sec"][-SAMPLE_SIZE: ] = new_data["time_sec"]
+
+        accumulated_data["PC1"] = np.roll(accumulated_data["PC1"], -SAMPLE_SIZE)
+        accumulated_data["PC1"][-SAMPLE_SIZE:] = new_data["PC1"]
+        
+        accumulated_data["projected_X"] = np.roll(accumulated_data["projected_X"], -SAMPLE_SIZE)
+        accumulated_data["projected_X"][-SAMPLE_SIZE:] = new_data["projected_X"]
+
+        accumulated_data["projected_Y"] = np.roll(accumulated_data["projected_Y"], -SAMPLE_SIZE)
+        accumulated_data["projected_Y"][-SAMPLE_SIZE:] = new_data["projected_Y"]
+
+
+        debug(2, "\t", "Updating plot with data from", new_data["time_sec"][0], "to", new_data["time_sec"][-1])
         curves[0].setData(accumulated_data["time_sec"], accumulated_data["PC1"])
         curves[1].setData(accumulated_data["projected_X"], accumulated_data["projected_Y"])
         app.processEvents()
 
+        metrics["plot_updates"]["count"] += 1
+
     except Empty:
         # No more data is ready yet, let's not hold up the main UI
-        debug("\t", "No data available")
+        debug(2, "\t", "No data available")
         pass
 
 def close_app():
+    ELAPSED_TIME = time.time() - START_TIME
+
     timer.stop()
     fetching_process.terminate()
     stream.close()
 
+    debug(1, "Avg num plot updates per second:", round(metrics["plot_updates"]["count"] / ELAPSED_TIME, 3))
+
     
 if __name__ == "__main__":
-
-    # TODO: maybe convert this to fixed-size lists, in case appending is too slow
     accumulated_data = {
-        "time_sec": np.array([]),
-        "PC1": np.array([]),
-        "projected_X": np.array([]),
-        "projected_Y": np.array([])
+        "time_sec":     np.zeros((HISTORY,)), # TODO: instead of 0, this value should be the value of the first timestamp received, otherwise the plot axis stretches to show 0 for a while
+        "PC1":          np.zeros((HISTORY,)),
+        "projected_X":  np.zeros((HISTORY,)),
+        "projected_Y": np.zeros((HISTORY,))
     }
 
-    debug("Creating data stream")
-    stream = sensor.SimulatedStream("mari-bowing-data/variable-speed.csv")  # UDPStream()
+    debug(2, "Creating data stream")
+    stream = sensor.UDPStream() #sensor.SimulatedStream(delay_ms = 5)
     
-    debug("Starting data collection process")
+    debug(2, "Starting data collection process")
     data_queue = Queue()
-    fetching_process = Process(target=retrieve_new_data, args=(data_queue,stream))
+    metrics_queue = Queue()
+    fetching_process = Process(target=retrieve_new_data, args=(data_queue, metrics_queue, stream))
     fetching_process.start()
 
-    debug("Creating GUI")
+    debug(2, "Creating GUI")
     app = QtGui.QApplication([])
     app.aboutToQuit.connect(close_app)
     window = pg.GraphicsWindow(title=WINDOW_TITLE)
@@ -112,6 +156,8 @@ if __name__ == "__main__":
     timer=QtCore.QTimer()
     timer.timeout.connect(plot_loop)
     timer.start(PLOT_LOOP_INTERVAL)
+
+    START_TIME = time.time()
      
     import sys
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
