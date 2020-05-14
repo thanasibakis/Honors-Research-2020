@@ -1,2 +1,6 @@
 .vscode/*
 *.pyc
+dist/
+*.egg-info
+*.egg
+help.txt

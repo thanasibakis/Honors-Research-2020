@@ -1,6 +1,7 @@
 import pandas as pd
 import pickle
 import serial  # pySerial package
+import serial.tools.list_ports
 import socket
 import subprocess
 import sys
@@ -10,7 +11,7 @@ from datetime import datetime
 
 IP = "192.168.4.2"
 UDP_PORT = 4000
-SER_PORT = "COM3" # serial.tools.list_ports.comports()[0].device
+SER_PORT = serial.tools.list_ports.comports()[0].device # "COM3" on Windows
 BAUD = 115200
 COLUMNS = ["ax", "ay", "az", "ex", "ey", "ez", "gx", "gy", "gz", "mx", "my", "mz", "qw", "qx", "qy", "qz", 
            "BatteryPercent", "SystemStatus", "GyroStatus", "AccelStatus", "MagStatus", "Timestamp", "SequenceNum"]
@@ -82,16 +83,24 @@ class SimulatedStream(DataStream):
         self.row_index = (self.row_index + 1) % len(self.data)
 
         return row
+    
+    def close(self):
+        # We need to do something that will cause readline to throw an exception, killing the data fetching thread
+        self.data = None
 
 
 def raw_to_dataframe(raw_data: [bytes]) -> pd.DataFrame:
     rows = []
 
     for line in raw_data:
-        line = line.decode("utf-8").strip()
+        try:
+            line = line.decode("utf-8").strip()
 
-        if line.startswith("mugicdata"): # Keep only lines with mugicdata prefix
-            rows.append(line.split(' ')[1:]) # but lose that prefix
+            if line.startswith("mugicdata"): # Keep only lines with mugicdata prefix
+                rows.append(line.split(' ')[1:])  # but lose that prefix
+        
+        except:
+            print("A line of data was corrupt. This is likely because you are running on serial mode and read the data mid-line. This line will be thrown out and is probably nothing to worry about.")
 
     return pd.DataFrame(rows, dtype="double", columns = COLUMNS)
 
