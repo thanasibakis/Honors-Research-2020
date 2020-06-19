@@ -20,8 +20,8 @@ In this project, we leverage the device's capabilities as a metric of its wearer
 
 \begin{figure}
   \centering
-  \includesvg[width = 0.8\linewidth]{img/schema}
-  \caption{An illustration of the two-dimensional plane of possible unstable motion, compared to the axis of stable bowing motion.}
+  \includesvg[width = 0.8\linewidth]{img/intro_schema}
+  \caption{An illustration of the plane of possible unstable motion, compared to the axis of stable bowing motion.}
 \end{figure}
 
 # Project Pipeline
@@ -116,6 +116,12 @@ In order to extract a signal of violin bowing motion, we needed to explore trans
 Our first instinct was to observe the bowing motions as a Euclidean distance from the starting position, $\sqrt{x^2 + y^2 + z^2}$. However, we found that this did not represent the back-and-forth cycles of bowing very well, since it also factored in any other motions that the violinist created, such as side-by-side swaying. In order to isolate the motion in the bowing direction from other directions of motion, we transformed the x,y,z signals into their principal components. The first principal component was found to be a much clearer cyclic motion than the Euclidean distance.
 
 ![A comparison of x,y,z position, Euclidean distance from the origin, and the principal components of the x,y,z position.](img/pca.png)
+
+\begin{figure}
+  \centering
+  \includesvg[width = 0.8\linewidth]{img/pca_schema}
+  \caption{An illustration of the three principal components relative to the violin and bow.}
+\end{figure}
 
 #### Two-Dimensional Projection
 
