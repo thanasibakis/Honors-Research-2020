@@ -105,7 +105,7 @@ class SimulatedStream(DataStream):
         # We need to do something that will cause readline to throw an exception, killing the data fetching thread
         self.data = None
 
-
+# Converts the raw output from the sensor to a Pandas data frame
 def raw_to_dataframe(raw_data: [bytes]) -> pd.DataFrame:
     rows = []
 

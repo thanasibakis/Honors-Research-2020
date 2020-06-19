@@ -1,5 +1,7 @@
-.vscode/*
-*.pyc
 dist/
-*.egg-info
+.vscode/
+svg-inkscape/
+
 *.egg
+*.egg-info
+*.pyc
