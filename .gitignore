@@ -1,9 +1,8 @@
-build/*
+build/
 dist/
 .vscode/
 svg-inkscape/
 
-*.egg
-*.egg-info
 *.pyc
-report/.Rhistory
+.Rhistory
+

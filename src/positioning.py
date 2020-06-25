@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import sklearn.decomposition
 from scipy import signal
 
@@ -17,23 +15,6 @@ def project_3D_to_2D(data, vec):
     pts_on_plane = np.matmul(data, proj_mat)
 
     return pts_on_plane
-
-def plot_all(data, pca_data):
-    fig, axes = plt.subplots(5, 3)
-
-    plot_row(axes, 0, data, "lax", "lay", "laz")
-    plot_row(axes, 1, data, "vx", "vy", "vz")
-    plot_row(axes, 2, data, "x", "y", "z")
-    plot_row(axes, 3, data, "d")
-    plot_row(axes, 4, pca_data, "PC1", "PC2", "PC3")
-
-def plot_row(axes, grid_row, data, *cols):
-    cols = list(cols)
-    bound = data[cols].abs().max().max() * 1.1 # one max to apply by col, then take the max of those
-
-    for data_col, grid_col in zip(cols, range(len(cols))):
-        sns.lineplot(data=data, x="time_sec", y=data_col, ax=axes[grid_row, grid_col])
-        axes[grid_row, grid_col].set_ylim((-bound, bound))
 
 # Processes acceleration data to obtain position data
 def prepare_data(data):

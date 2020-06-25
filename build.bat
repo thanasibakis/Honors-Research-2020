@@ -1,0 +1,1 @@
+pyinstaller --noconfirm windows.spec

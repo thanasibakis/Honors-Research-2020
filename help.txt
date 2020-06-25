@@ -1,19 +1,14 @@
 # Using Python 3 #
 
-To install locally:
-	cd Honors-Research-2020
-	pip install -e .
-	mugic [wifi|usb|simulate]
-
-To upload to pypi:
-	cd Honors-Research-2020
-	python setup.py sdist
-	twine upload dist/*
-
+Dependencies: pandas, pyinstaller (to package), pyqt5, pyqtgraph, pyserial, sklearn
 
 
 Note that pyqtgraph is broken on Python 3.8, so you should install the patched version:
 	pip install --upgrade git+http://github.com/pyqtgraph/pyqtgraph.git
+
+Note that pyinstaller does not support Python 3.8, so if you are trying to package the application, consider using a supported version.
+
+Note that pyinstaller has issues with sklearn, so we have included the troublesome dll file for Windows users.
 
 Note that the Python distribution available on the Windows Store can cause sklearn to have issues with the PATH.
 You should install Python from the main website instead.

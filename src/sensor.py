@@ -9,8 +9,6 @@ import sys
 import time
 from datetime import datetime
 
-import mugic
-
 
 IP = "192.168.4.2"
 UDP_PORT = 4000
@@ -43,12 +41,7 @@ class UDPStream(DataStream):
     def __init__(self, ip=IP, port=UDP_PORT):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-        try:
-            self.socket.bind((ip, port))
-
-        except OSError:
-            print("Could not find the device.")
-            sys.exit()
+        self.socket.bind((ip, int(port)))
 
     def readline(self):
         data, addr = self.socket.recvfrom(1024)
@@ -87,7 +80,14 @@ class SerialStream(DataStream):
 # Simulates a sensor from previously-saved raw data (a pickled list of bytes)
 class SimulatedStream(DataStream):
     def __init__(self, delay_ms=10):
-        with open(os.path.join(os.path.dirname(mugic.__file__), "simdata.pckl"), 'rb') as f:
+        try:
+            root_dir = sys._MEIPASS # if built with pyinstaller
+        
+        except AttributeError:
+            root_dir = '.'
+
+
+        with open(os.path.join(root_dir, "simdata.pckl"), 'rb') as f:
             self.data = pickle.load(f)
         
         self.row_index = 0
