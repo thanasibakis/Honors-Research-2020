@@ -3,12 +3,12 @@
 block_cipher = None
 
 
-a = Analysis(['./src/app.py'],
-             pathex=['./lib'],
+a = Analysis(['src\\app.py'],
+             pathex=['C:\\Users\\thana\\Documents\\Honors-Research-2020'],
              binaries=[],
-             datas=[('./src/simdata.pckl', '.')],
-             hiddenimports=['scipy.special.cython_special'],
-             hookspath=['./hooks'],
+             datas=[],
+             hiddenimports=[],
+             hookspath=[],
              runtime_hooks=[],
              excludes=[],
              win_no_prefer_redirects=False,
