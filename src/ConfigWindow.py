@@ -64,14 +64,14 @@ class ConfigWindow(QtGui.QWidget):
 
     def get_udp_ip(self):
         ip, ok = QtGui.QInputDialog.getText(
-            self, WINDOW_TITLE, "UDP IP address?"
+            self, WINDOW_TITLE, "Sensor UDP IP address?", QtGui.QLineEdit.Normal, sensor.IP
         )
 			
         return ip if ok else None
 
     def get_udp_port(self):
         port, ok = QtGui.QInputDialog.getText(
-            self, WINDOW_TITLE, "UDP port?"
+            self, WINDOW_TITLE, "Sensor UDP port?", QtGui.QLineEdit.Normal, str(sensor.UDP_PORT)
         )
 			
         return port if ok else None

@@ -2,9 +2,13 @@ import pandas as pd
 import numpy as np
 import sklearn.decomposition
 from scipy import signal
+#from scipy.integrate import simps
 
-# Projects vector of 3D points onto a plane perpendicular to vec (returning 2D points)
-def project_3D_to_2D(data, vec):
+# points: Nx3 matrix of x,y,z points
+# vec: 3-tuple
+# Projects points onto a plane perpendicular to vec,
+# returning Nx2 matrix of 2D points
+def project_3D_to_2D(points, vec):
     P = np.array([vec[1], -vec[0], 0])
     Q = np.array([vec[0] * vec[2], vec[1] * vec[2], -(vec[0] ** 2 + vec[1] ** 2)])
 
@@ -12,60 +16,32 @@ def project_3D_to_2D(data, vec):
     Q /= np.sqrt(np.sum(Q ** 2))
 
     proj_mat = np.vstack((P, Q)).T
-    pts_on_plane = np.matmul(data, proj_mat)
+    pts_on_plane = np.matmul(points, proj_mat)
 
     return pts_on_plane
-
-# Processes acceleration data to obtain position data
-def prepare_data(data):
-    R = rot_mat(data.qw, data.qx, data.qy, data.qz)
-    accel = rotate(data[["ax", "ay", "az"]], R)
-
-    data = data.assign(
-        lax=accel.ax,
-        lay=accel.ay,
-        laz=accel.az,
-        time_sec=data.Timestamp
-    )
-    data = data.assign(
-        vx=integ(data.lax, data.time_sec),
-        vy=integ(data.lay, data.time_sec),
-        vz=integ(data.laz, data.time_sec)
-    )
-    data = data.assign(
-        x=integ(data.vx, data.time_sec),
-        y=integ(data.vy, data.time_sec),
-        z=integ(data.vz, data.time_sec)
-    )
-    data = data.assign(
-        d=np.sqrt(data.x**2 + data.y**2 + data.z**2)
-    )
-
-    return data
 
 # Filter and integrate a column (high pass filter removes low freq noise,
 #   aka the constant drift that the sensor reports... keeping just the interesting motion we do)
 # https://forums.adafruit.com/viewtopic.php?f=8&t=81842&hilit=bno055+position&start=0#p414708
-def integ(col, time):
+def filter_and_integrate(col, time):
     samp_rate = col.shape[0] / (time.max() - time.min())
     b, a = signal.butter(5, 0.36 * 2 / samp_rate, "high")
     col_filtered = signal.filtfilt(b, a, col)
 
-    return np.cumsum(col_filtered / samp_rate)
+    return np.cumsum(col_filtered / samp_rate) # simps(col_filtered, time) ?
 
 # Get the principal components and rotation matrix of the given dataset
-def PCA(data, *cols):
+def PCA(df):
     pca = sklearn.decomposition.PCA()
-    components = pca.fit_transform(data[list(cols)])
+    components = pca.fit_transform(df)
     rotation = pca.components_.T
 
-    components = pd.DataFrame(components, columns=("PC1", "PC2", "PC3")) \
-        .assign(time_sec = data.time_sec)
+    components = pd.DataFrame(components, columns=(f"PC{i}" for i,_ in enumerate(df.columns)))
 
     return rotation, components
 
-# a 3D matrix, each R[:, :, i] is the rotation matrix of sample i
-def rot_mat(qw, qx, qy, qz):
+# a 3D matrix, each R[:, :, i] is the rotation matrix of quaternion sample i
+def quaternions_as_rotation_matrix(qw, qx, qy, qz):
     q_norm = np.sqrt(qw ** 2 + qx ** 2 + qy ** 2 + qz ** 2)
     qw /= q_norm
     qx /= q_norm
@@ -85,8 +61,10 @@ def rot_mat(qw, qx, qy, qz):
     
     return R
 
-# Applies a rotation matrix from rot_mat()
-def rotate(M, R):
+# M: an Nx3 matrix
+# R: a 3x3xN array
+# Rotates each row in M using the corresponding 3x3 rotation matrix in R
+def rotate_each_row(M, R):
     colnames = M.columns
     M = M.to_numpy()
     M2 = M.copy()

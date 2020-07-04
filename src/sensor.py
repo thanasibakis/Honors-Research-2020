@@ -14,7 +14,7 @@ IP = "192.168.4.2"
 UDP_PORT = 4000
 BAUD = 115200
 COLUMNS = ["ax", "ay", "az", "ex", "ey", "ez", "gx", "gy", "gz", "mx", "my", "mz", "qw", "qx", "qy", "qz", 
-           "BatteryPercent", "SystemStatus", "GyroStatus", "AccelStatus", "MagStatus", "Timestamp", "SequenceNum"]
+           "BatteryPercent", "SystemStatus", "GyroStatus", "AccelStatus", "MagStatus", "time_sec", "SequenceNum"]
 
 
 # Template class
@@ -106,7 +106,7 @@ class SimulatedStream(DataStream):
         self.data = None
 
 # Converts the raw output from the sensor to a Pandas data frame
-def raw_to_dataframe(raw_data: [bytes]) -> pd.DataFrame:
+def parse_bytes(raw_data: [bytes]) -> pd.DataFrame:
     rows = []
 
     for line in raw_data:
@@ -130,6 +130,6 @@ if __name__ == "__main__":
     stream = UDPStream()
 
     raw = stream.read_for_time(seconds = 1)
-    raw_to_dataframe(raw).to_csv(outfile)
+    parse_bytes(raw).to_csv(outfile)
 
     stream.close()
