@@ -10,9 +10,9 @@ This project was supervised by [Prof. Mari Kimura](http://www.marikimura.com/) a
 
 Requires Python 3. Works best with Python 3.7, not 3.8.
 
-Dependencies: pandas, pyinstaller (to package), pyqt5, pyqtgraph, pyserial, sklearn
+Dependencies: pandas, pyinstaller (to package), PySide2, pyqtgraph, pyserial, sklearn
 
-If you do use Python 3.8, you should not use the pyqtgraph release available from PyPI. Instead, use:
+You should not use the pyqtgraph release available from PyPI. Instead, use:
 
 `pip install --upgrade git+http://github.com/pyqtgraph/pyqtgraph.git`
 

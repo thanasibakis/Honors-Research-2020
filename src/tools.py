@@ -1,3 +1,5 @@
+# Math tools
+
 import pandas as pd
 import numpy as np
 import sklearn.decomposition
@@ -23,12 +25,12 @@ def project_3D_to_2D(points, vec):
 # Filter and integrate a column (high pass filter removes low freq noise,
 #   aka the constant drift that the sensor reports... keeping just the interesting motion we do)
 # https://forums.adafruit.com/viewtopic.php?f=8&t=81842&hilit=bno055+position&start=0#p414708
-def filter_and_integrate(col, time):
-    samp_rate = col.shape[0] / (time.max() - time.min())
+def filter_and_integrate(data_vector, time_vector):
+    samp_rate = data_vector.shape[0] / (time_vector.max() - time_vector.min())
     b, a = signal.butter(5, 0.36 * 2 / samp_rate, "high")
-    col_filtered = signal.filtfilt(b, a, col)
+    filtered_vector = signal.filtfilt(b, a, data_vector)
 
-    return np.cumsum(col_filtered / samp_rate) # simps(col_filtered, time) ?
+    return np.cumsum(filtered_vector / samp_rate) # simps(filtered_vector, time_vector) ?
 
 # Get the principal components and rotation matrix of the given dataset
 def PCA(df):

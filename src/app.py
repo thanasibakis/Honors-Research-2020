@@ -1,36 +1,24 @@
-from pyqtgraph import QtGui
-import traceback
+from PySide2 import QtCore, QtWidgets, QtGui
+import sys, traceback
 
 from ConfigWindow import ConfigWindow
-from PlotWindow import PlotWindow
-
-class ErrorWindow(QtGui.QWidget):
-    def __init__(self, error_message, traceback_string):
-        super().__init__()
-
-        self.message_box = QtGui.QMessageBox()
-
-        self.message_box.setText("An error was encountered. Details can be found below.")
-        self.message_box.setInformativeText(error_message)
-        self.message_box.setWindowTitle("Error with MUGIC")
-        self.message_box.setDetailedText(traceback_string)
-
-        self.message_box.exec_()
+from MainWindow import MainWindow
+from ErrorWindow import ErrorWindow
         
 
 
 if __name__ == "__main__":
     try:
-        app = QtGui.QApplication([])
+        app = QtWidgets.QApplication([])
 
         config_window = ConfigWindow()
         stream = config_window.get_stream()
 
         if stream:
-            plot_window = PlotWindow(stream)
-            plot_window.show()
+            main_window = MainWindow(stream)
+            main_window.show()
 
-            app.exec_()
+            sys.exit(app.exec_())
     
     except Exception as e:
         error_window = ErrorWindow(str(e), traceback.format_exc())
