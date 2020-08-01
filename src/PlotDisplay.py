@@ -13,15 +13,15 @@ class PlotDisplay(pg.GraphicsLayoutWidget):
     def __init__(self, stream):
         pg.GraphicsLayoutWidget.__init__(self) # super() doesn't seem to work here
 
-        # Storing accumulated data
-        self.accumulated_raw = pd.DataFrame(columns=["time_sec", "ax", "ay", "az", "qw", "qx", "qy", "qz"])
-        self.accumulated_processed = pd.DataFrame(columns=["time_sec", "PC1", "projected_X", "projected_Y"])
-
         # Application data
         self.data_queue = Queue()
-        self.plots      = [ self.addPlot() for _ in range(2) ]
-        self.curves     = [ plot.plot() for plot in self.plots ]
+        self.plots      = { key: self.addPlot(title=key) for key in ("position", "velocity", "projection") }
+        self.curves     = { key: plot.plot() for key, plot in self.plots.items() }
         self.stream     = stream
+
+        # Storing accumulated data
+        self.should_record = False
+        self.reset_recording()
 
         # Start the data collection process
         fetching_thread = Thread(target=retrieve_new_data, args=(self.stream, self.data_queue))
@@ -52,27 +52,37 @@ class PlotDisplay(pg.GraphicsLayoutWidget):
 
 
     def _update_graphics(self):
-        self.curves[0].setData(
+        self.curves["position"].setData(
             self.accumulated_processed.time_sec.tail(config.HISTORY).reset_index(drop = True), # pg depends on the first index being 0
-            self.accumulated_processed.PC1.tail(config.HISTORY).reset_index(drop = True)
+            self.accumulated_processed.position.tail(config.HISTORY).reset_index(drop = True)
         )
 
-        self.curves[1].setData(
+        self.curves["velocity"].setData(
+            self.accumulated_processed.time_sec.tail(config.HISTORY).reset_index(drop = True),
+            self.accumulated_processed.velocity.tail(config.HISTORY).reset_index(drop = True)
+        )
+
+        self.curves["projection"].setData(
             self.accumulated_processed.projected_X.tail(config.HISTORY).reset_index(drop = True),
             self.accumulated_processed.projected_Y.tail(config.HISTORY).reset_index(drop = True)
         )
 
-        self.plots[0].setYRange(
-            min(-0.2, self.accumulated_processed.PC1.min()),
-            max( 0.2, self.accumulated_processed.PC1.max())
+        self.plots["position"].setYRange(
+            min(-0.2, self.accumulated_processed.position.min()),
+            max( 0.2, self.accumulated_processed.position.max())
         )
 
-        self.plots[1].setXRange(
+        self.plots["velocity"].setYRange(
+            min(-0.2, self.accumulated_processed.position.min()),
+            max( 0.2, self.accumulated_processed.position.max())
+        )
+
+        self.plots["projection"].setXRange(
             min(-0.1, self.accumulated_processed.projected_X.min()),
             max( 0.1, self.accumulated_processed.projected_X.max())
         )
 
-        self.plots[1].setYRange(
+        self.plots["projection"].setYRange(
             min(-0.1, self.accumulated_processed.projected_Y.min()),
             max( 0.1, self.accumulated_processed.projected_Y.max())
         )
@@ -81,18 +91,21 @@ class PlotDisplay(pg.GraphicsLayoutWidget):
         log_message(2, "Fetching data")
 
         samples = parse_bytes(self.data_queue.get_nowait())
-        self._accumulate_raw_data(samples)
 
-        # Make sure we have enough data before we run any filters
-        assert self.accumulated_raw.shape[0] >= config.REUSE_SIZE + config.SAMPLE_SIZE
+        # Always collect data to keep the queue fresh, but throw it out if we don't want it
+        if(self.should_record):
+            self._accumulate_raw_data(samples)
 
-        # When integrating/filtering/etc, throw in some old data too...
-        log_message(2, "Processing data")
+            # Make sure we have enough data before we run any filters
+            assert self.accumulated_raw.shape[0] >= config.REUSE_SIZE + config.SAMPLE_SIZE
 
-        processed_data = process_data(self.accumulated_raw.tail(config.REUSE_SIZE + config.SAMPLE_SIZE))
+            # When integrating/filtering/etc, throw in some old data too...
+            log_message(2, "Processing data")
 
-        # ...but still only accumulate the new data
-        self._accumulate_processed_data(processed_data.tail(config.SAMPLE_SIZE))
+            processed_data = process_data(self.accumulated_raw.tail(config.REUSE_SIZE + config.SAMPLE_SIZE))
+
+            # ...but still only accumulate the new data
+            self._accumulate_processed_data(processed_data.tail(config.SAMPLE_SIZE))
 
     # Plot loop
     def update(self):
@@ -101,7 +114,8 @@ class PlotDisplay(pg.GraphicsLayoutWidget):
             self._fetch_data()
 
             # Update the plots with the new data
-            self._update_graphics()
+            if(self.should_record):
+                self._update_graphics()
         
         except Empty:
             # No more data is ready yet, let's not hold up the main UI
@@ -113,6 +127,20 @@ class PlotDisplay(pg.GraphicsLayoutWidget):
 
         except Exception as ex:
             log_message(1, repr(ex))
+
+    # Toggle whether to accumulate and plot data. Either way, the fetching thread runs,
+    # so when we toggle on, we pick up with the data that is new, not the data during the toggle off
+    def toggle_recording(self):
+        self.should_record = not self.should_record
+
+    # Clear out plots and accumulated data
+    def reset_recording(self):
+        self.should_record = False
+
+        self.accumulated_raw = pd.DataFrame(columns=["time_sec", "ax", "ay", "az", "qw", "qx", "qy", "qz"])
+        self.accumulated_processed = pd.DataFrame(columns=["time_sec", "position", "velocity", "projected_X", "projected_Y"])
+
+        self._update_graphics()
 
 
 # Converts the raw output from the sensor to a Pandas data frame
@@ -137,27 +165,30 @@ def log_message(error_level, msg):
         print(datetime.now(), '\t', msg)
 
 
-# The positioning algorithm - CURRENTLY DISPLAYING LAX INSTEAD OF PC1
+# The positioning algorithm
 def process_data(samples):
     raw_acceleration = samples[["ax", "ay", "az"]]
 
     rotation_matrices = tools.quaternions_as_rotation_matrix(samples.qw, samples.qx, samples.qy, samples.qz)
     linear_acceleration = tools.rotate_each_row(raw_acceleration, rotation_matrices)
 
-    # Get dataframe of x,y,z
-    position = linear_acceleration \
-        .apply(lambda col: tools.filter_and_integrate(col, samples.time_sec)) \
+    # Get dataframes of velocity and x,y,z
+    velocity = linear_acceleration \
         .apply(lambda col: tools.filter_and_integrate(col, samples.time_sec))
 
-    pca_matrix, pca_data = tools.PCA(position)
+    position = velocity \
+        .apply(lambda col: tools.filter_and_integrate(col, samples.time_sec))
 
-    eig1 = pca_matrix[:, 0]
+    _, velocity_PCs = tools.PCA(velocity)
+    position_matrix, position_PCs = tools.PCA(position)
+
+    eig1 = position_matrix[:, 0]
     new_points = tools.project_3D_to_2D(position.to_numpy(), eig1)
 
-    # TODO: export everything so we can see if position/velocity look right
     return pd.DataFrame({
         "time_sec":    samples.time_sec.values, # .values removes the pd index that throws off DataFrame()
-        "PC1":         pca_data.PC1,
+        "position":    position_PCs.PC1,
+        "velocity":    velocity_PCs.PC1,
         "projected_X": new_points[:, 0],
         "projected_Y": new_points[:, 1]
     })
