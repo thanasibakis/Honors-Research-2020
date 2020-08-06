@@ -5,17 +5,21 @@ from ConfigWindow import ConfigWindow
 from MainWindow import MainWindow
 from ErrorWindow import ErrorWindow
         
-
+import config
 
 if __name__ == "__main__":
     try:
         app = QtWidgets.QApplication([])
 
         config_window = ConfigWindow()
-        stream = config_window.get_stream()
+        setup = config_window.get_setup()
 
-        if stream:
-            main_window = MainWindow(stream)
+        if setup:
+            stream, sample_size, reuse_size = setup
+
+            assert sample_size < config.HISTORY
+
+            main_window = MainWindow(stream, sample_size, reuse_size)
             main_window.show()
 
             sys.exit(app.exec_())

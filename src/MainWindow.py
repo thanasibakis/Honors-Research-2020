@@ -1,9 +1,10 @@
 from PySide2 import QtWidgets, QtCore, QtGui
 from PlotDisplay import PlotDisplay
+import sys
 
 class MainWindow(QtWidgets.QMainWindow):
 
-    def __init__(self, stream):
+    def __init__(self, stream, sample_size, reuse_size):
         QtWidgets.QMainWindow.__init__(self) # super doesn't seem to work here
         self.setWindowTitle("MUGIC Plot")
         self.window_widget = QtWidgets.QWidget()
@@ -15,7 +16,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stream = stream
 
         # Create the plot widget to use as the central widget
-        self.plot_widget = PlotDisplay(self.stream)
+        self.plot_widget = PlotDisplay(self.stream, sample_size, reuse_size)
         self.main_layout.addWidget(self.plot_widget)
 
         # Create the control panel
@@ -24,10 +25,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_layout.addWidget(self.control_widget)
         self.control_widget.setLayout(self.control_layout)
 
-        toggle_button = QtWidgets.QPushButton()
-        toggle_button.setText("Toggle Recording")
-        toggle_button.clicked.connect(self.plot_widget.toggle_recording)
-        self.control_layout.addWidget(toggle_button)
+        self.toggle_button = QtWidgets.QPushButton()
+        self.toggle_button.setText("Stop Recording")
+        self.toggle_button.clicked.connect(self.toggle_recording)
+        self.control_layout.addWidget(self.toggle_button)
 
         reset_button = QtWidgets.QPushButton()
         reset_button.setText("Reset")
@@ -47,7 +48,7 @@ class MainWindow(QtWidgets.QMainWindow):
         toggle_option = QtGui.QAction("Toggle recording", self)
         toggle_option.setShortcut("Ctrl+R")
         toggle_option.setStatusTip("Start/stop plotting data")
-        toggle_option.triggered.connect(self.plot_widget.toggle_recording)
+        toggle_option.triggered.connect(self.toggle_recording)
         run_menu.addAction(toggle_option)
 
         toggle_option = QtGui.QAction("Reset plots", self)
@@ -62,11 +63,37 @@ class MainWindow(QtWidgets.QMainWindow):
         export_option.triggered.connect(self.export_csv)
         file_menu.addAction(export_option)
 
+        # Create the output console
+        self.console = QtGui.QTextEdit()
+        self.console.moveCursor(QtGui.QTextCursor.Start)
+        self.console.ensureCursorVisible()
+        self.main_layout.addWidget(self.console)
+
+        # Hook up stdout to the console
+        sys.stdout = TextStream()
+        sys.stdout.signal.connect(self.update_text)
+
         # Start the plot loop
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.plot_widget.update)
         self.timer.start(10)
 
+    # https://stackoverflow.com/questions/44432276
+    def update_text(self, text):
+        cursor = self.console.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        cursor.insertText(text)
+        self.console.setTextCursor(cursor)
+        self.console.ensureCursorVisible()
+
+    def toggle_recording(self):
+        self.plot_widget.toggle_recording()
+
+        if self.plot_widget.should_record:
+            self.toggle_button.setText("Stop Recording")
+
+        else:
+            self.toggle_button.setText("Start Recording")
 
     def export_csv(self):
         filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Export data", "export.csv", "CSV files (*.csv)")
@@ -78,4 +105,14 @@ class MainWindow(QtWidgets.QMainWindow):
     # Override to close stream safely
     def closeEvent(self, event):
         self.stream.close()
+        sys.stdout = sys.__stdout__
+
         event.accept()
+
+
+# https://stackoverflow.com/questions/21071448
+class TextStream(QtCore.QObject):
+    signal = QtCore.Signal(str)
+
+    def write(self, text):
+        self.signal.emit(text)

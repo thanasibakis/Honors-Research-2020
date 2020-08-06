@@ -10,21 +10,23 @@ import config, tools
 
 class PlotDisplay(pg.GraphicsLayoutWidget):
 
-    def __init__(self, stream):
+    def __init__(self, stream, sample_size, reuse_size):
         pg.GraphicsLayoutWidget.__init__(self) # super() doesn't seem to work here
 
         # Application data
-        self.data_queue = Queue()
-        self.plots      = { key: self.addPlot(title=key) for key in ("position", "velocity", "projection") }
-        self.curves     = { key: plot.plot() for key, plot in self.plots.items() }
-        self.stream     = stream
+        self.data_queue  = Queue()
+        self.plots       = { key: self.addPlot(title=key) for key in ("position", "velocity", "projection") }
+        self.curves      = { key: plot.plot() for key, plot in self.plots.items() }
+        self.stream      = stream
+        self.sample_size = sample_size
+        self.reuse_size  = reuse_size
 
         # Storing accumulated data
-        self.should_record = False
         self.reset_recording()
+        self.toggle_recording()
 
         # Start the data collection process
-        fetching_thread = Thread(target=retrieve_new_data, args=(self.stream, self.data_queue))
+        fetching_thread = Thread(target=retrieve_new_data, args=(self.stream, self.sample_size, self.data_queue))
         fetching_thread.start()
 
     
@@ -97,15 +99,16 @@ class PlotDisplay(pg.GraphicsLayoutWidget):
             self._accumulate_raw_data(samples)
 
             # Make sure we have enough data before we run any filters
-            assert self.accumulated_raw.shape[0] >= config.REUSE_SIZE + config.SAMPLE_SIZE
+            assert self.accumulated_raw.shape[0] >= self.reuse_size + self.sample_size
 
             # When integrating/filtering/etc, throw in some old data too...
             log_message(2, "Processing data")
 
-            processed_data = process_data(self.accumulated_raw.tail(config.REUSE_SIZE + config.SAMPLE_SIZE))
+            processed_data = process_data(self.accumulated_raw.tail(self.reuse_size + self.sample_size))
 
             # ...but still only accumulate the new data
-            self._accumulate_processed_data(processed_data.tail(config.SAMPLE_SIZE))
+            new_data = processed_data.tail(self.sample_size)
+            self._accumulate_processed_data(new_data)
 
     # Plot loop
     def update(self):
@@ -123,6 +126,7 @@ class PlotDisplay(pg.GraphicsLayoutWidget):
 
         except AssertionError:
             # We haven't collected enough data to begin analysis yet
+            # (reuse_size > amount of accumulated data)
             log_message(1, "Withholding data for calibration")
 
         except Exception as ex:
@@ -194,10 +198,10 @@ def process_data(samples):
     })
 
 
-def retrieve_new_data(stream, data_queue):
+def retrieve_new_data(stream, n_lines, data_queue):
     try:
         while True:
-            raw_data = stream.readlines(n=config.SAMPLE_SIZE)
+            raw_data = stream.readlines(n_lines)
             data_queue.put(raw_data)
 
     except:  # the connection was closed, so this thread needs to end

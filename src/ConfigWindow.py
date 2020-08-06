@@ -9,7 +9,7 @@ WINDOW_TITLE = "MUGIC Config"
 
 
 class ConfigWindow(QtWidgets.QWidget):
-    def get_stream(self):
+    def get_setup(self):
         stream_type = self.get_stream_type()
 
         if stream_type == "Simulated":
@@ -44,7 +44,17 @@ class ConfigWindow(QtWidgets.QWidget):
         else:
             return None
 
-        return stream
+        sample_size = self.get_sample_size()
+
+        if not sample_size:
+            return None
+
+        reuse_size = self.get_reuse_size()
+
+        if not reuse_size:
+            return None
+
+        return stream, sample_size, reuse_size
 
 
     def get_stream_type(self):
@@ -67,22 +77,36 @@ class ConfigWindow(QtWidgets.QWidget):
         return port if ok else None
 
     def get_serial_baud(self):
-        port, ok = QtGui.QInputDialog.getText(
+        baud, ok = QtGui.QInputDialog.getText(
             self, WINDOW_TITLE, "Baud?", QtGui.QLineEdit.Normal, str(config.BAUD)
         )
 			
-        return port if ok else None
+        return int(baud) if ok else None
 
     def get_udp_ip(self):
         ip, ok = QtGui.QInputDialog.getText(
-            self, WINDOW_TITLE, "Sensor UDP IP address?", QtGui.QLineEdit.Normal, config.IP
+            self, WINDOW_TITLE, "Destination UDP IP address?", QtGui.QLineEdit.Normal, config.IP
         )
 			
         return ip if ok else None
 
     def get_udp_port(self):
         port, ok = QtGui.QInputDialog.getText(
-            self, WINDOW_TITLE, "Sensor UDP port?", QtGui.QLineEdit.Normal, str(config.UDP_PORT)
+            self, WINDOW_TITLE, "Destination UDP port?", QtGui.QLineEdit.Normal, str(config.UDP_PORT)
         )
 			
-        return port if ok else None
+        return int(port) if ok else None
+
+    def get_sample_size(self):
+        size, ok = QtGui.QInputDialog.getText(
+            self, WINDOW_TITLE, "Number of samples per batch?", QtGui.QLineEdit.Normal, str(config.SAMPLE_SIZE)
+        )
+			
+        return int(size) if ok else None
+
+    def get_reuse_size(self):
+        size, ok = QtGui.QInputDialog.getText(
+            self, WINDOW_TITLE, "Number of samples to reuse in analysis?", QtGui.QLineEdit.Normal, str(config.REUSE_SIZE)
+        )
+			
+        return int(size) if ok else None
