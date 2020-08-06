@@ -32,7 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         reset_button = QtWidgets.QPushButton()
         reset_button.setText("Reset")
-        reset_button.clicked.connect(self.plot_widget.reset_recording)
+        reset_button.clicked.connect(self.reset_recording)
         self.control_layout.addWidget(reset_button)
 
         export_button = QtWidgets.QPushButton()
@@ -54,7 +54,7 @@ class MainWindow(QtWidgets.QMainWindow):
         toggle_option = QtGui.QAction("Reset plots", self)
         toggle_option.setShortcut("Ctrl+Backspace")
         toggle_option.setStatusTip("Clear plotting data")
-        toggle_option.triggered.connect(self.plot_widget.reset_recording)
+        toggle_option.triggered.connect(self.reset_recording)
         run_menu.addAction(toggle_option)
         
         export_option = QtGui.QAction("Export data...", self)
@@ -94,6 +94,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         else:
             self.toggle_button.setText("Start Recording")
+
+    def reset_recording(self):
+        self.plot_widget.reset_recording()
+        self.toggle_button.setText("Start Recording")
 
     def export_csv(self):
         filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Export data", "export.csv", "CSV files (*.csv)")
