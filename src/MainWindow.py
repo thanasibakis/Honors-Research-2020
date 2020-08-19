@@ -4,7 +4,7 @@ import sys
 
 class MainWindow(QtWidgets.QMainWindow):
 
-    def __init__(self, stream, sample_size, reuse_size):
+    def __init__(self, sensor):
         QtWidgets.QMainWindow.__init__(self) # super doesn't seem to work here
         self.setWindowTitle("MUGIC Plot")
         self.window_widget = QtWidgets.QWidget()
@@ -13,10 +13,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.window_widget)
         self.setMinimumSize(1500, 500)
         
-        self.stream = stream
+        self.sensor = sensor
 
         # Create the plot widget to use as the central widget
-        self.plot_widget = PlotDisplay(self.stream, sample_size, reuse_size)
+        self.plot_widget = PlotDisplay(sensor)
         self.main_layout.addWidget(self.plot_widget)
 
         # Create the control panel
@@ -26,7 +26,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.control_widget.setLayout(self.control_layout)
 
         self.toggle_button = QtWidgets.QPushButton()
-        self.toggle_button.setText("Stop Recording")
+        self.toggle_button.setText("Start Recording")
         self.toggle_button.clicked.connect(self.toggle_recording)
         self.control_layout.addWidget(self.toggle_button)
 
@@ -75,7 +75,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Start the plot loop
         self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.plot_widget.update)
+        self.timer.timeout.connect(self.plot_widget.update_plot)
         self.timer.start(10)
 
     # https://stackoverflow.com/questions/44432276
@@ -87,28 +87,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self.console.ensureCursorVisible()
 
     def toggle_recording(self):
-        self.plot_widget.toggle_recording()
+        is_now_recording = self.sensor.toggle_recording()
 
-        if self.plot_widget.should_record:
+        if is_now_recording:
             self.toggle_button.setText("Stop Recording")
 
         else:
             self.toggle_button.setText("Start Recording")
 
     def reset_recording(self):
-        self.plot_widget.reset_recording()
+        self.sensor.reset()
         self.toggle_button.setText("Start Recording")
 
     def export_csv(self):
         filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Export data", "export.csv", "CSV files (*.csv)")
 
         if(filename):
-            self.plot_widget.export_accumulated_data(filename)
+            self.sensor.accumulated_data.to_csv(filename)
     
 
     # Override to close stream safely
     def closeEvent(self, event):
-        self.stream.close()
+        self.sensor.close_stream()
         sys.stdout = sys.__stdout__
 
         event.accept()

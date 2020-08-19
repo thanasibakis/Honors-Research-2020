@@ -38,7 +38,7 @@ def PCA(df):
     components = pca.fit_transform(df)
     rotation = pca.components_.T
 
-    components = pd.DataFrame(components, columns=(f"PC{i}" for i,_ in enumerate(df.columns)))
+    components = pd.DataFrame(components, columns = (f"PC{i}" for i,_ in enumerate(df.columns)), index = df.index)
 
     return rotation, components
 

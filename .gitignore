@@ -1,8 +1,10 @@
+.vscode/
 build/
 dist/
-.vscode/
 svg-inkscape/
 
+*.code-workspace
 *.pyc
+
 .Rhistory
 

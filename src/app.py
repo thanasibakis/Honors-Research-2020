@@ -4,7 +4,7 @@ import sys, traceback
 from ConfigWindow import ConfigWindow
 from MainWindow import MainWindow
 from ErrorWindow import ErrorWindow
-        
+from Sensor import Sensor
 import config
 
 if __name__ == "__main__":
@@ -15,11 +15,13 @@ if __name__ == "__main__":
         setup = config_window.get_setup()
 
         if setup:
-            stream, sample_size, reuse_size = setup
+            stream, batch_size, reuse_size = setup
 
-            assert sample_size < config.HISTORY
+            assert batch_size < config.HISTORY
 
-            main_window = MainWindow(stream, sample_size, reuse_size)
+            sensor = Sensor(stream, batch_size, reuse_size)
+
+            main_window = MainWindow(sensor)
             main_window.show()
 
             sys.exit(app.exec_())

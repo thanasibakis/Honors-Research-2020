@@ -44,9 +44,9 @@ class ConfigWindow(QtWidgets.QWidget):
         else:
             return None
 
-        sample_size = self.get_sample_size()
+        batch_size = self.get_batch_size()
 
-        if not sample_size:
+        if not batch_size:
             return None
 
         reuse_size = self.get_reuse_size()
@@ -54,7 +54,7 @@ class ConfigWindow(QtWidgets.QWidget):
         if not reuse_size:
             return None
 
-        return stream, sample_size, reuse_size
+        return stream, batch_size, reuse_size
 
 
     def get_stream_type(self):
@@ -97,9 +97,9 @@ class ConfigWindow(QtWidgets.QWidget):
 			
         return int(port) if ok else None
 
-    def get_sample_size(self):
+    def get_batch_size(self):
         size, ok = QtGui.QInputDialog.getText(
-            self, WINDOW_TITLE, "Number of samples per batch?", QtGui.QLineEdit.Normal, str(config.SAMPLE_SIZE)
+            self, WINDOW_TITLE, "Number of samples per batch?", QtGui.QLineEdit.Normal, str(config.BATCH_SIZE)
         )
 			
         return int(size) if ok else None
