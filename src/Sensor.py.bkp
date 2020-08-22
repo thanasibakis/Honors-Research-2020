@@ -13,8 +13,7 @@ class Sensor:
         self.reuse_size = reuse_size
         self.data_queue = Queue()
 
-        self.accumulated_raw = None
-        self.accumulated_processed = None
+        self.accumulated_data = None
         self.should_record = False
         self.reset() # initializes these variables
 
@@ -24,7 +23,7 @@ class Sensor:
         self._data_fetching_thread.start()
 
     # Basically the core of the research problem-- turn raw acceleration into meaningful position
-    def process_next_batch(self):
+    def accumulate_next_batch(self):
         try:
             # Collect new raw acceleration data, if available.
             # Otherwise, throws Empty exception
@@ -52,59 +51,23 @@ class Sensor:
 
             # Don't calculate position if we haven't calibrated enough
             # ("Calibrating" == accumulating enough data to fulfill reuse size requirement)
-            if self.needs_calibration():
-                log_message(1, f"Calibrating ({self.accumulated_raw.shape[0]} samples), hold still...")
+            if(self.accumulated_data.shape[0] < self.reuse_size + self.batch_size):
+                log_message(1, f"Calibrating ({self.accumulated_data.shape[0]} samples), hold still...")
 
-                self.accumulated_raw = self.accumulated_raw.append(new_samples)
+                # Assuming they're holding still, the initial position will be 0
+                new_samples.iloc[:, :] = 0.0
 
-                # If we have enough data now, integrate it all at once so we have previous positions to work with
-                if not self.needs_calibration(): 
-                    self.accumulated_processed = self.accumulated_processed.append(self.accumulated_raw[["ax", "ay", "az", "qw", "qx", "qy", "qz"]])
+                self.accumulated_data = self.accumulated_data \
+                    .append(new_samples) \
+                    .fillna(0.0)
 
-                    # Convert to linear acceleration
-                    rotation_matrices = tools.quaternions_as_rotation_matrix(self.accumulated_processed.qw, self.accumulated_processed.qx, self.accumulated_processed.qy, self.accumulated_processed.qz)
-                    new_linear_acceleration = tools.rotate_each_row(self.accumulated_processed[["ax", "ay", "az"]], rotation_matrices) \
-                        .rename(columns = {"ax": "lax", "ay": "lay", "az": "laz"}) \
-                        .set_index(self.accumulated_processed.index) # the tool will throw out the index
-
-                    self.accumulated_processed[["lax", "lay", "laz"]] = new_linear_acceleration
-
-                    # Get measured velocity by filtering this acceleration and integrating
-                    new_velocity = self.accumulated_processed[["lax", "lay", "laz"]] \
-                        .apply(lambda col: tools.filter_and_integrate(col, self.accumulated_processed.index)) \
-                        .rename(columns = {"lax": "vx", "lay": "vy", "laz": "vz"})
-
-                    self.accumulated_processed[["vx", "vy", "vz"]] = new_velocity
-
-                    # Get measured position by filtering this acceleration and integrating
-                    new_position = self.accumulated_processed[["vx", "vy", "vz"]] \
-                        .apply(lambda col: tools.filter_and_integrate(col, self.accumulated_processed.index)) \
-                        .rename(columns = {"vx": "x", "vy": "y", "vz": "z"})
-
-                    self.accumulated_processed[["x", "y", "z"]] = new_position
-
-                    # Perform principal component analysis on the velocity and position
-                    _, velocity_PCs = tools.PCA(self.accumulated_processed[["vx", "vy", "vz"]])
-                    position_matrix, position_PCs = tools.PCA(self.accumulated_processed[["x", "y", "z"]])
-
-                    self.accumulated_processed["velocity"] = velocity_PCs.PC1
-                    self.accumulated_processed["position"] = position_PCs.PC1
-
-                    # Project position onto the plane perpendicular to the direction of most motion
-                    eig1 = position_matrix[:, 0]
-                    projected_points = tools.project_3D_to_2D(self.accumulated_processed[["x", "y", "z"]].to_numpy(), eig1)
-
-                    self.accumulated_processed["projected_X"] = projected_points[:, 0]
-                    self.accumulated_processed["projected_Y"] = projected_points[:, 1]
-
-                    log_message(1, "Done calibrating.")
-
-            # Otherwise, begin the batch-by-batch positioning algorithm
+            # Otherwise, begin the positioning algorithm
             else:
                 # Ensure our accumulated data is in chronological order
-                self.sort_accumulated_data()
+                if(not self.accumulated_data.index.is_monotonic_increasing):
+                    self.accumulated_data.sort_index(inplace = True)
 
-                log_message(2, "Processing batch")
+                log_message(2, "Processing data")
 
                 # Convert to linear acceleration
                 rotation_matrices = tools.quaternions_as_rotation_matrix(new_samples.qw, new_samples.qx, new_samples.qy, new_samples.qz)
@@ -115,7 +78,7 @@ class Sensor:
                 new_samples[["lax", "lay", "laz"]] = new_linear_acceleration
 
                 # Get measured velocity by filtering this acceleration with previous samples, and integrating
-                new_velocity = self.accumulated_processed[["lax", "lay", "laz"]] \
+                new_velocity = self.accumulated_data[["lax", "lay", "laz"]] \
                     .tail(self.reuse_size) \
                     .append(new_samples[["lax", "lay", "laz"]]) \
                     .apply(lambda col: tools.filter_and_integrate(col, new_samples.index)) \
@@ -125,27 +88,27 @@ class Sensor:
 
                 # Retrieve average velocity of previous batch
                 # (or specifically, the portion of that batch that overlaps with this one)
-                #mean_old_v = self.accumulated_processed[["vx", "vy", "vz"]] \
-                #    .tail(self.reuse_size - self.batch_size) \
-                #    .mean(axis = 0)
+                mean_old_v = self.accumulated_data[["vx", "vy", "vz"]] \
+                    .tail(self.reuse_size - self.batch_size) \
+                    .mean(axis = 0)
 
                 # Retrieve average velocity of new batch
                 # (again, specifically the portion that overlaps)
-                #mean_new_v = new_velocity \
-                #    .head(self.reuse_size - self.batch_size) \
-                #    .mean(axis = 0)
+                mean_new_v = new_velocity \
+                    .head(self.reuse_size - self.batch_size) \
+                    .mean(axis = 0)
 
                 # Add a constant to velocity such that mean_old_v == mean_new_v
-                #offset = mean_old_v - mean_new_v
-                #new_velocity = new_velocity.apply(lambda row: row + offset,
-                #                                  axis = 1)
+                offset = mean_old_v - mean_new_v
+                new_velocity = new_velocity.apply(lambda row: row + offset,
+                                                  axis = 1)
 
                 ## End integration correction ##
 
                 new_samples[["vx", "vy", "vz"]] = new_velocity.tail(self.batch_size)
 
                 # Get measured position by filtering this velocity with previous samples, and integrating
-                new_position = self.accumulated_processed[["vx", "vy", "vz"]] \
+                new_position = self.accumulated_data[["vx", "vy", "vz"]] \
                     .tail(self.reuse_size) \
                     .append(new_samples[["vx", "vy", "vz"]]) \
                     .apply(lambda col: tools.filter_and_integrate(col, new_samples.index)) \
@@ -155,20 +118,20 @@ class Sensor:
 
                 # Retrieve average position of previous batch
                 # (or specifically, the portion of that batch that overlaps with this one)
-                #mean_old_p = self.accumulated_processed[["x", "y", "z"]] \
-                #    .tail(self.reuse_size - self.batch_size) \
-                #    .mean(axis = 0)
+                mean_old_p = self.accumulated_data[["x", "y", "z"]] \
+                    .tail(self.reuse_size - self.batch_size) \
+                    .mean(axis = 0)
 
                 # Retrieve average position of new batch
                 # (again, specifically the portion that overlaps)
-                #mean_new_p = new_position \
-                #    .head(self.reuse_size - self.batch_size) \
-                #    .mean(axis = 0)
+                mean_new_p = new_position \
+                    .head(self.reuse_size - self.batch_size) \
+                    .mean(axis = 0)
 
                 # Add a constant to position such that mean_old_p == mean_new_p
-                #offset = mean_old_p - mean_new_p
-                #new_position = new_position.apply(lambda row: row + offset,
-                #                                  axis = 1)
+                offset = mean_old_p - mean_new_p
+                new_position = new_position.apply(lambda row: row + offset,
+                                                  axis = 1)
 
                 ## End integration correction ##
 
@@ -188,7 +151,7 @@ class Sensor:
                 new_samples["projected_X"] = projected_points[:, 0]
                 new_samples["projected_Y"] = projected_points[:, 1]
 
-                self.accumulated_processed = self.accumulated_processed.append(new_samples)
+                self.accumulated_data = self.accumulated_data.append(new_samples)
             
         except Empty:
             # The data fetching thread had nothing, so don't hold up the GUI thread... just return out
@@ -202,25 +165,16 @@ class Sensor:
 
     def get_latest_n_samples(self, n):
         # Ensure our accumulated data is in chronological order
-        self.sort_accumulated_data()
+        if(not self.accumulated_data.index.is_monotonic_increasing):
+            self.accumulated_data.sort_index(inplace = True)
 
-        return self.accumulated_processed.tail(n)
+        return self.accumulated_data.tail(n)
     
-    def needs_calibration(self):
-        return self.accumulated_raw.shape[0] < self.reuse_size + self.batch_size
-
     def reset(self):
-        self.accumulated_raw = pd.DataFrame(columns=config.COLUMNS) \
-            .set_index("time_sec")
-
-        self.accumulated_processed = pd.DataFrame(columns=config.ACCUMULATED_COLUMNS) \
+        self.accumulated_data = pd.DataFrame(columns=config.ACCUMULATED_COLUMNS) \
             .set_index("time_sec")
 
         self.should_record = False
-
-    def sort_accumulated_data(self):
-        if(not self.accumulated_processed.index.is_monotonic_increasing):
-            self.accumulated_processed.sort_index(inplace = True)
 
     # Enables/disables the processing of incoming data
     def toggle_recording(self):
@@ -243,6 +197,7 @@ def _data_fetching_loop(stream, data_queue, batch_size):
 
     try:
         while True:
+            # TODO: why is reading taking longer now vs the previous codebase version?
             raw_bytes = stream.readlines(batch_size)
             data_queue.put(raw_bytes)
 

@@ -3,7 +3,7 @@ import pyqtgraph as pg
 import config
 
 
-class PlotDisplay(pg.GraphicsLayoutWidget):
+class PlotWidget(pg.GraphicsLayoutWidget):
 
     def __init__(self, sensor):
         pg.GraphicsLayoutWidget.__init__(self) # super() doesn't seem to work here
@@ -17,7 +17,7 @@ class PlotDisplay(pg.GraphicsLayoutWidget):
     def update_plot(self):
         # Load new data, even if we aren't recording.
         # This way, when we do record, the data will be fresh
-        self.sensor.accumulate_next_batch()
+        self.sensor.process_next_batch()
 
         # Update the plots with the new data
         data = self.sensor.get_latest_n_samples(config.HISTORY) \

@@ -1,5 +1,5 @@
 from PySide2 import QtWidgets, QtCore, QtGui
-from PlotDisplay import PlotDisplay
+from PlotWidget import PlotWidget
 import sys
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -16,7 +16,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sensor = sensor
 
         # Create the plot widget to use as the central widget
-        self.plot_widget = PlotDisplay(sensor)
+        self.plot_widget = PlotWidget(sensor)
         self.main_layout.addWidget(self.plot_widget)
 
         # Create the control panel
