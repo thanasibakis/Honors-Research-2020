@@ -70,8 +70,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_layout.addWidget(self.console)
 
         # Hook up stdout to the console
-        #sys.stdout = TextStream()
-        #sys.stdout.signal.connect(self.update_text)
+        sys.stdout = TextStream()
+        sys.stdout.signal.connect(self.update_text)
 
         # Start the plot loop
         self.timer = QtCore.QTimer()
