@@ -1,5 +1,5 @@
 from PySide2 import QtWidgets, QtCore, QtGui
-from PlotWidget import PlotWidget
+from PlotDisplay import PlotDisplay
 import sys
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -13,10 +13,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.window_widget)
         self.setMinimumSize(1500, 500)
         
-        self.sensor = sensor
+        self.stream = sensor.stream
 
         # Create the plot widget to use as the central widget
-        self.plot_widget = PlotWidget(sensor)
+        self.plot_widget = PlotDisplay(sensor)
         self.main_layout.addWidget(self.plot_widget)
 
         # Create the control panel
@@ -26,7 +26,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.control_widget.setLayout(self.control_layout)
 
         self.toggle_button = QtWidgets.QPushButton()
-        self.toggle_button.setText("Start Recording")
+        self.toggle_button.setText("Stop Recording")
         self.toggle_button.clicked.connect(self.toggle_recording)
         self.control_layout.addWidget(self.toggle_button)
 
@@ -70,12 +70,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_layout.addWidget(self.console)
 
         # Hook up stdout to the console
-        sys.stdout = TextStream()
-        sys.stdout.signal.connect(self.update_text)
+        #sys.stdout = TextStream()
+        #sys.stdout.signal.connect(self.update_text)
 
         # Start the plot loop
         self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.plot_widget.update_plot)
+        self.timer.timeout.connect(self.plot_widget.update)
         self.timer.start(10)
 
     # https://stackoverflow.com/questions/44432276
@@ -87,28 +87,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self.console.ensureCursorVisible()
 
     def toggle_recording(self):
-        is_now_recording = self.sensor.toggle_recording()
+        self.plot_widget.sensor.toggle_recording()
 
-        if is_now_recording:
+        if self.plot_widget.sensor.should_record:
             self.toggle_button.setText("Stop Recording")
 
         else:
             self.toggle_button.setText("Start Recording")
 
     def reset_recording(self):
-        self.sensor.reset()
+        self.plot_widget.sensor.reset_recording()
         self.toggle_button.setText("Start Recording")
 
     def export_csv(self):
         filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Export data", "export.csv", "CSV files (*.csv)")
 
         if(filename):
-            self.sensor.accumulated_data.to_csv(filename)
+            self.plot_widget.sensor.export_accumulated_data(filename)
     
 
     # Override to close stream safely
     def closeEvent(self, event):
-        self.sensor.close_stream()
+        self.stream.close()
         sys.stdout = sys.__stdout__
 
         event.accept()

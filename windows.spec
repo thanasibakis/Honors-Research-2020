@@ -3,10 +3,10 @@
 block_cipher = None
 
 
-a = Analysis(['../src/app.py'],
+a = Analysis(['./src/app.py'],
              pathex=['./lib'],
              binaries=[],
-             datas=[('../src/data/simdata.pckl', '.')],
+             datas=[('./src/simdata.pckl', '.')],
              hiddenimports=['scipy.special.cython_special'],
              hookspath=['./hooks'],
              runtime_hooks=[],

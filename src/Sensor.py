@@ -2,6 +2,7 @@ from queue import Queue, Empty
 from datetime import datetime
 from threading import Thread
 import pandas as pd
+import time
 
 import config, tools
 
@@ -13,245 +14,163 @@ class Sensor:
         self.reuse_size = reuse_size
         self.data_queue = Queue()
 
-        self.accumulated_raw = None
-        self.accumulated_processed = None
-        self.should_record = False
-        self.reset() # initializes these variables
+        self.reset_recording()
+        self.toggle_recording()
 
-        # The method that actually reads from the device needs to be in its own thread.
-        # This way, if there's nothing coming from it, we aren't holding up the GUI thread.
-        self._data_fetching_thread = Thread(target=_data_fetching_loop, args=(self.stream, self.data_queue, self.batch_size))
-        self._data_fetching_thread.start()
+        self.done_calibrating = False
 
-    # Basically the core of the research problem-- turn raw acceleration into meaningful position
-    def process_next_batch(self):
-        try:
-            # Collect new raw acceleration data, if available.
-            # Otherwise, throws Empty exception
-            log_message(2, "Fetching data")
-            new_bytes = self.data_queue.get_nowait()
+        fetching_thread = Thread(target=retrieve_new_data, args=(self.stream, self.batch_size, self.data_queue))
+        fetching_thread.start()
 
-            # Don't process/save this data if we don't want it
-            if(not self.should_record):
-                return
 
-            # Parse the bytes into a pandas data frame
-            new_samples = []
-
-            for line in new_bytes:
-                try:
-                    line = line.decode("utf-8").strip()
-
-                    if line.startswith("mugicdata"): # Keep only lines with mugicdata prefix
-                        new_samples.append(line.split(' ')[1:])  # but lose that prefix
-                
-                except:
-                    log_message(1, "A line of data was corrupt. This is likely because you are running on serial mode and read the data mid-line. This line will be thrown out and is probably nothing to worry about.")
-
-            new_samples = pd.DataFrame(new_samples, columns = config.COLUMNS, dtype = "double").set_index("time_sec")
-
-            # Don't calculate position if we haven't calibrated enough
-            # ("Calibrating" == accumulating enough data to fulfill reuse size requirement)
-            if self.needs_calibration():
-                log_message(1, f"Calibrating ({self.accumulated_raw.shape[0]} samples), hold still...")
-
-                self.accumulated_raw = self.accumulated_raw.append(new_samples)
-
-                # If we have enough data now, integrate it all at once so we have previous positions to work with
-                if not self.needs_calibration(): 
-                    self.accumulated_processed = self.accumulated_processed.append(self.accumulated_raw[["ax", "ay", "az", "qw", "qx", "qy", "qz"]])
-
-                    # Convert to linear acceleration
-                    rotation_matrices = tools.quaternions_as_rotation_matrix(self.accumulated_processed.qw, self.accumulated_processed.qx, self.accumulated_processed.qy, self.accumulated_processed.qz)
-                    new_linear_acceleration = tools.rotate_each_row(self.accumulated_processed[["ax", "ay", "az"]], rotation_matrices) \
-                        .rename(columns = {"ax": "lax", "ay": "lay", "az": "laz"}) \
-                        .set_index(self.accumulated_processed.index) # the tool will throw out the index
-
-                    self.accumulated_processed[["lax", "lay", "laz"]] = new_linear_acceleration
-
-                    # Get measured velocity by filtering this acceleration and integrating
-                    new_velocity = self.accumulated_processed[["lax", "lay", "laz"]] \
-                        .apply(lambda col: tools.filter_and_integrate(col, self.accumulated_processed.index)) \
-                        .rename(columns = {"lax": "vx", "lay": "vy", "laz": "vz"})
-
-                    self.accumulated_processed[["vx", "vy", "vz"]] = new_velocity
-
-                    # Get measured position by filtering this acceleration and integrating
-                    new_position = self.accumulated_processed[["vx", "vy", "vz"]] \
-                        .apply(lambda col: tools.filter_and_integrate(col, self.accumulated_processed.index)) \
-                        .rename(columns = {"vx": "x", "vy": "y", "vz": "z"})
-
-                    self.accumulated_processed[["x", "y", "z"]] = new_position
-
-                    # Perform principal component analysis on the velocity and position
-                    _, velocity_PCs = tools.PCA(self.accumulated_processed[["vx", "vy", "vz"]])
-                    position_matrix, position_PCs = tools.PCA(self.accumulated_processed[["x", "y", "z"]])
-
-                    self.accumulated_processed["velocity"] = velocity_PCs.PC1
-                    self.accumulated_processed["position"] = position_PCs.PC1
-
-                    # Project position onto the plane perpendicular to the direction of most motion
-                    eig1 = position_matrix[:, 0]
-                    projected_points = tools.project_3D_to_2D(self.accumulated_processed[["x", "y", "z"]].to_numpy(), eig1)
-
-                    self.accumulated_processed["projected_X"] = projected_points[:, 0]
-                    self.accumulated_processed["projected_Y"] = projected_points[:, 1]
-
-                    log_message(1, "Done calibrating.")
-
-            # Otherwise, begin the batch-by-batch positioning algorithm
-            else:
-                # Ensure our accumulated data is in chronological order
-                self.sort_accumulated_data()
-
-                log_message(2, "Processing batch")
-
-                # Convert to linear acceleration
-                rotation_matrices = tools.quaternions_as_rotation_matrix(new_samples.qw, new_samples.qx, new_samples.qy, new_samples.qz)
-                new_linear_acceleration = tools.rotate_each_row(new_samples[["ax", "ay", "az"]], rotation_matrices) \
-                    .rename(columns = {"ax": "lax", "ay": "lay", "az": "laz"}) \
-                    .set_index(new_samples.index) # the tool will throw out the index
-
-                new_samples[["lax", "lay", "laz"]] = new_linear_acceleration
-
-                # Get measured velocity by filtering this acceleration with previous samples, and integrating
-                new_velocity = self.accumulated_processed[["lax", "lay", "laz"]] \
-                    .tail(self.reuse_size) \
-                    .append(new_samples[["lax", "lay", "laz"]]) \
-                    .apply(lambda col: tools.filter_and_integrate(col, new_samples.index)) \
-                    .rename(columns = {"lax": "vx", "lay": "vy", "laz": "vz"})
-
-                ## Integration correction ##
-
-                # Retrieve average velocity of previous batch
-                # (or specifically, the portion of that batch that overlaps with this one)
-                #mean_old_v = self.accumulated_processed[["vx", "vy", "vz"]] \
-                #    .tail(self.reuse_size - self.batch_size) \
-                #    .mean(axis = 0)
-
-                # Retrieve average velocity of new batch
-                # (again, specifically the portion that overlaps)
-                #mean_new_v = new_velocity \
-                #    .head(self.reuse_size - self.batch_size) \
-                #    .mean(axis = 0)
-
-                # Add a constant to velocity such that mean_old_v == mean_new_v
-                #offset = mean_old_v - mean_new_v
-                #new_velocity = new_velocity.apply(lambda row: row + offset,
-                #                                  axis = 1)
-
-                ## End integration correction ##
-
-                new_samples[["vx", "vy", "vz"]] = new_velocity.tail(self.batch_size)
-
-                # Get measured position by filtering this velocity with previous samples, and integrating
-                new_position = self.accumulated_processed[["vx", "vy", "vz"]] \
-                    .tail(self.reuse_size) \
-                    .append(new_samples[["vx", "vy", "vz"]]) \
-                    .apply(lambda col: tools.filter_and_integrate(col, new_samples.index)) \
-                    .rename(columns = {"vx": "x", "vy": "y", "vz": "z"})
-
-                ## Integration correction ##
-
-                # Retrieve average position of previous batch
-                # (or specifically, the portion of that batch that overlaps with this one)
-                #mean_old_p = self.accumulated_processed[["x", "y", "z"]] \
-                #    .tail(self.reuse_size - self.batch_size) \
-                #    .mean(axis = 0)
-
-                # Retrieve average position of new batch
-                # (again, specifically the portion that overlaps)
-                #mean_new_p = new_position \
-                #    .head(self.reuse_size - self.batch_size) \
-                #    .mean(axis = 0)
-
-                # Add a constant to position such that mean_old_p == mean_new_p
-                #offset = mean_old_p - mean_new_p
-                #new_position = new_position.apply(lambda row: row + offset,
-                #                                  axis = 1)
-
-                ## End integration correction ##
-
-                new_samples[["x", "y", "z"]] = new_position.tail(self.batch_size)
-
-                # Perform principal component analysis on the velocity and position
-                _, velocity_PCs = tools.PCA(new_samples[["vx", "vy", "vz"]])
-                position_matrix, position_PCs = tools.PCA(new_samples[["x", "y", "z"]])
-
-                new_samples["velocity"] = velocity_PCs.PC1
-                new_samples["position"] = position_PCs.PC1
-
-                # Project position onto the plane perpendicular to the direction of most motion
-                eig1 = position_matrix[:, 0]
-                projected_points = tools.project_3D_to_2D(new_samples[["x", "y", "z"]].to_numpy(), eig1)
-
-                new_samples["projected_X"] = projected_points[:, 0]
-                new_samples["projected_Y"] = projected_points[:, 1]
-
-                self.accumulated_processed = self.accumulated_processed.append(new_samples)
-            
-        except Empty:
-            # The data fetching thread had nothing, so don't hold up the GUI thread... just return out
-            log_message(2, "No data was queued.")
-    
-        except Exception as ex:
-            log_message(1, repr(ex))
-
-    def close_stream(self):
-        self.stream.close()
-
-    def get_latest_n_samples(self, n):
-        # Ensure our accumulated data is in chronological order
-        self.sort_accumulated_data()
-
-        return self.accumulated_processed.tail(n)
-    
-    def needs_calibration(self):
-        return self.accumulated_raw.shape[0] < self.reuse_size + self.batch_size
-
-    def reset(self):
-        self.accumulated_raw = pd.DataFrame(columns=config.COLUMNS) \
-            .set_index("time_sec")
-
-        self.accumulated_processed = pd.DataFrame(columns=config.ACCUMULATED_COLUMNS) \
-            .set_index("time_sec")
-
-        self.should_record = False
-
-    def sort_accumulated_data(self):
-        if(not self.accumulated_processed.index.is_monotonic_increasing):
-            self.accumulated_processed.sort_index(inplace = True)
-
-    # Enables/disables the processing of incoming data
+    # Toggle whether to accumulate and plot data. Either way, the fetching thread runs,
+    # so when we toggle on, we pick up with the data that is new, not the data during the toggle off
     def toggle_recording(self):
         self.should_record = not self.should_record
+    
+    # Add the given data to the accumulated storage,
+    # keeping at most the latest HISTORY number of samples
+    def _accumulate_raw_data(self, raw_data):
+        self.accumulated_raw = self.accumulated_raw.append(
+            raw_data[self.accumulated_raw.columns],
+            ignore_index = True
+        )
 
-        return self.should_record
+    
+    def _accumulate_processed_data(self, processed_data):
+        self.accumulated_processed = self.accumulated_processed.append(
+            processed_data[self.accumulated_processed.columns],
+            ignore_index = True
+        )
 
+    def fetch_data(self):
+        samples = parse_bytes(self.data_queue.get_nowait())
 
-# Printing, but with timestamps!
+        # Always collect data to keep the queue fresh, but throw it out if we don't want it
+        if(self.should_record):
+            self._accumulate_raw_data(samples)
+
+            # Make sure we have enough data before we run any filters
+            assert self.accumulated_raw.shape[0] >= self.reuse_size + self.batch_size
+
+            # The first time we have enough data, we need to integrate the entire set of calibration batches
+            if not self.done_calibrating:
+                calibrated_data = self.process_data(self.accumulated_raw, integration_correction=False)
+                self._accumulate_processed_data(calibrated_data)
+
+                self.done_calibrating = True
+
+            else:
+                # When integrating/filtering/etc, throw in some old data too...
+                processed_data = self.process_data(self.accumulated_raw.tail(self.reuse_size + self.batch_size))
+
+                # ...but still only accumulate the new data
+                new_data = processed_data.tail(self.batch_size)
+                self._accumulate_processed_data(new_data)
+
+    # Note that the data withheld for calibration won't have been processed, but will be exported    
+    def export_accumulated_data(self, filename):
+        log_message(2, "Exporting accumulated data")
+
+        pd.merge(self.accumulated_raw, self.accumulated_processed, how = "outer", on = "time_sec") \
+            .to_csv(filename)
+
+    # Clear out plots and accumulated data
+    def reset_recording(self):
+        self.should_record = False
+
+        self.accumulated_raw = pd.DataFrame(columns=["time_sec", "ax", "ay", "az", "qw", "qx", "qy", "qz"])
+        self.accumulated_processed = pd.DataFrame(columns=["time_sec", "vx", "vy", "vz", "x", "y", "z", "position", "velocity", "projected_X", "projected_Y"])
+
+    # The positioning algorithm
+    def process_data(self, samples, integration_correction = True):
+        raw_acceleration = samples[["ax", "ay", "az"]]
+
+        rotation_matrices = tools.quaternions_as_rotation_matrix(samples.qw, samples.qx, samples.qy, samples.qz)
+        linear_acceleration = tools.rotate_each_row(raw_acceleration, rotation_matrices)
+
+        # Get dataframes of velocity and x,y,z
+        velocity = linear_acceleration \
+            .apply(lambda col: tools.filter_and_integrate(col, samples.time_sec))
+
+        if integration_correction:
+            mean_old_v = self.accumulated_processed \
+                .tail(self.reuse_size - self.batch_size)[["vx", "vy", "vz"]] \
+                .mean(axis = 0)
+
+            mean_new_v = velocity \
+                .head(self.reuse_size - self.batch_size) \
+                .mean(axis = 0)
+
+            offset = mean_old_v.to_numpy() - mean_new_v.to_numpy() # to numpy bc of the different colnames :(
+            velocity = velocity.apply(lambda row: row + offset, axis = 1)
+
+        position = velocity \
+            .apply(lambda col: tools.filter_and_integrate(col, samples.time_sec))
+
+        if integration_correction:
+            mean_old_p = self.accumulated_processed \
+                .tail(self.reuse_size - self.batch_size)[["x", "y", "z"]] \
+                .mean(axis = 0)
+
+            mean_new_p = position \
+                .head(self.reuse_size - self.batch_size) \
+                .mean(axis = 0)
+
+            offset = mean_old_p.to_numpy() - mean_new_p.to_numpy()
+            position = position.apply(lambda row: row + offset, axis = 1)
+
+        _, velocity_PCs = tools.PCA(velocity)
+        position_matrix, position_PCs = tools.PCA(position)
+
+        eig1 = position_matrix[:, 0]
+        new_points = tools.project_3D_to_2D(position.to_numpy(), eig1)
+
+        return pd.DataFrame({
+            "time_sec":    samples.time_sec.values, # .values removes the pd index that throws off DataFrame()
+            "position":    position_PCs.PC1,
+            "x":           position.ax,
+            "y":           position.ay,
+            "z":           position.az,
+            "velocity":    velocity_PCs.PC1,
+            "vx":          velocity.ax,
+            "vy":          velocity.ay,
+            "vz":          velocity.az,
+            "projected_X": new_points[:, 0],
+            "projected_Y": new_points[:, 1]
+        })
+
 def log_message(error_level, msg):
     if(error_level <= config.DEBUG_LEVEL):
         print(datetime.now(), '\t', msg)
 
-# Constantly pushes data from the sensor into a queue for processing on demand
-def _data_fetching_loop(stream, data_queue, batch_size):
-    import time
-    start = time.time()
-    last_time = start
-    iterations = 0
-
+def retrieve_new_data(stream, n_lines, data_queue):
     try:
         while True:
-            raw_bytes = stream.readlines(batch_size)
-            data_queue.put(raw_bytes)
-
-            iterations += 1
-            now = time.time()
-            log_message(1, f"Time since last iteration: {round(now - last_time, 2)}")
-            log_message(1, f"Average iters/sec: {round(iterations / (now - start), 2)}")
-            log_message(1, "----------------------------")
-            last_time = now
+            raw_data = stream.readlines(n_lines)
+            data_queue.put(raw_data)
 
     except:  # the connection was closed, so this thread needs to end
-            log_message(1, "Fetching has been halted.")
+        log_message(2, "Fetching has been halted.")
+
+
+# Converts the raw output from the sensor to a Pandas data frame
+def parse_bytes(raw_data: [bytes]) -> pd.DataFrame:
+    rows = []
+
+    for line in raw_data:
+        try:
+            line = line.decode("utf-8").strip()
+
+            if line.startswith("mugicdata"): # Keep only lines with mugicdata prefix
+                rows.append(line.split(' ')[1:])  # but lose that prefix
+        
+        except:
+            print("A line of data was corrupt. This is likely because you are running on serial mode and read the data mid-line. This line will be thrown out and is probably nothing to worry about.")
+
+    return pd.DataFrame(rows, dtype="double", columns = config.COLUMNS)
+
+
+
+
+

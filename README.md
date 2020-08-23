@@ -6,23 +6,19 @@ In this project, we leverage the device's capabilities as a metric of its wearer
 
 This project was supervised by [Prof. Mari Kimura](http://www.marikimura.com/) as an undergraduate research project for the UCI ICS Honors Program.
 
-## Running
+## Troubleshooting
 
-Tested on macOS Catalina and Windows 10. Requires Python 3. Works best with Python 3.7, not 3.8 (particuarly when it comes to building).
+Requires Python 3. Works best with Python 3.7, not 3.8.
 
-This application has been built into a Docker image (my first one!), based on the `python:3.7` image, to ensure that you can have all the correctly-functioning package versions. You can use `./run.sh` to run the program, once you have an X server running. (I recommend [X410](https://x410.dev/) for Windows 10 and [XQuartz](https://www.xquartz.org/) for macOS)
+Dependencies: pandas, pyinstaller (to package), PySide2, pyqtgraph, pyserial, sklearn
 
-If you would like to use your own Python installation, the packages required can be installed with `pip install -r requirements.txt`.
+You should not use the pyqtgraph release available from PyPI. Instead, use:
 
-Note that the Python distribution available on the Windows Store can cause sklearn to have issues with the PATH. You should install Python from the main website instead.
+`pip install --upgrade git+http://github.com/pyqtgraph/pyqtgraph.git`
 
-## Building to an Executable
+Note that pyinstaller does not support Python 3.8, so if you are trying to package the application, consider using a supported version.
 
-The program can be built into an executable using pyinstaller:
+Note that pyinstaller has issues with sklearn, so we have included the troublesome dll file for Windows users in lib/.
 
-```
-pip install pyinstaller
-make build-mac
-```
-
-The resulting executable will be in `build_resourcs/dist/`.
+Note that the Python distribution available on the Windows Store can cause sklearn to have issues with the PATH.
+You should install Python from the main website instead.

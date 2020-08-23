@@ -38,10 +38,10 @@ class SimulatedStream(_DataStream):
             root_dir = sys._MEIPASS # if built with pyinstaller
         
         except AttributeError:
-            root_dir = 'src'
+            root_dir = '.'
 
-        print(os.getcwd())
-        with open(os.path.join(root_dir, "data", "simdata.pckl"), 'rb') as f:
+
+        with open(os.path.join(root_dir, "simdata.pckl"), 'rb') as f:
             self.data = pickle.load(f)
         
         self.row_index = 0

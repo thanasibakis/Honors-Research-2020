@@ -1,14 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from datetime import datetime
-
 block_cipher = None
 
 
-a = Analysis(['../src/app.py'],
+a = Analysis(['./src/app.py'],
              pathex=['./lib'],
              binaries=[],
-             datas=[('../src/data/simdata.pckl', '.')],
+             datas=[('./src/simdata.pckl', '.')],
              hiddenimports=['scipy.special.cython_special', 'pkg_resources.py2_warn'],
              hookspath=['./hooks'],
              runtime_hooks=[],
@@ -23,7 +21,7 @@ exe = EXE(pyz,
           a.scripts,
           [],
           exclude_binaries=True,
-          name='MUGIC Plot',
+          name='app',
           debug=False,
           bootloader_ignore_signals=False,
           strip=False,
@@ -36,8 +34,8 @@ coll = COLLECT(exe,
                strip=False,
                upx=True,
                upx_exclude=[],
-               name='MUGIC Plot')
+               name='app')
 app = BUNDLE(coll,
-             name=f'MUGIC Plot {dt.date(dt.now())}.app',
+             name='app.app',
              icon=None,
              bundle_identifier=None)
