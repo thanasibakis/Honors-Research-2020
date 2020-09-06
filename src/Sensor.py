@@ -6,7 +6,7 @@ import time
 
 import config, tools
 
-
+# An interface to the data coming in from the sensor.
 class Sensor:
     def __init__(self, stream, batch_size = config.BATCH_SIZE, reuse_size = config.REUSE_SIZE):
         self.stream = stream
@@ -28,21 +28,22 @@ class Sensor:
     def toggle_recording(self):
         self.should_record = not self.should_record
     
-    # Add the given data to the accumulated storage,
-    # keeping at most the latest HISTORY number of samples
+
+    # Add the given data to the accumulated storage
     def _accumulate_raw_data(self, raw_data):
         self.accumulated_raw = self.accumulated_raw.append(
             raw_data[self.accumulated_raw.columns],
             ignore_index = True
         )
 
-    
+
     def _accumulate_processed_data(self, processed_data):
         self.accumulated_processed = self.accumulated_processed.append(
             processed_data[self.accumulated_processed.columns],
             ignore_index = True
         )
 
+    # Accumulates and processes the next batch of data. This is to be called reguarly from the GUI loop.
     def fetch_data(self):
         samples = parse_bytes(self.data_queue.get_nowait())
 
@@ -53,7 +54,8 @@ class Sensor:
             # Make sure we have enough data before we run any filters
             assert self.accumulated_raw.shape[0] >= self.reuse_size + self.batch_size
 
-            # The first time we have enough data, we need to integrate the entire set of calibration batches
+            # The first time we have enough data, we need to integrate the entire set of calibration batches,
+            # so we have an initial reference to add to when integrating future data
             if not self.done_calibrating:
                 calibrated_data = self.process_data(self.accumulated_raw, integration_correction=False)
                 self._accumulate_processed_data(calibrated_data)
@@ -61,7 +63,7 @@ class Sensor:
                 self.done_calibrating = True
 
             else:
-                # When integrating/filtering/etc, throw in some old data too...
+                # When integrating/filtering/etc, throw in some old data too... otherwise the batches are disconnected
                 processed_data = self.process_data(self.accumulated_raw.tail(self.reuse_size + self.batch_size))
 
                 # ...but still only accumulate the new data
@@ -97,6 +99,7 @@ class Sensor:
             mean_old_v = self.accumulated_processed \
                 .tail(self.reuse_size - self.batch_size)[["vx", "vy", "vz"]] \
                 .mean(axis = 0)
+                # maybe not - batch_size
 
             mean_new_v = velocity \
                 .head(self.reuse_size - self.batch_size) \

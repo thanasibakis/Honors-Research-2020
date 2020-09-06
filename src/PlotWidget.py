@@ -8,7 +8,7 @@ from threading import Thread
 import config, tools
 
 
-class PlotDisplay(pg.GraphicsLayoutWidget):
+class PlotWidget(pg.GraphicsLayoutWidget):
 
     def __init__(self, sensor):
         pg.GraphicsLayoutWidget.__init__(self) # super() doesn't seem to work here
