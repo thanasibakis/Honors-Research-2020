@@ -26,7 +26,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.control_widget.setLayout(self.control_layout)
 
         self.toggle_button = QtWidgets.QPushButton()
-        self.toggle_button.setText("Stop Recording")
+        self.toggle_button.setText("Start Recording")
         self.toggle_button.clicked.connect(self.toggle_recording)
         self.control_layout.addWidget(self.toggle_button)
 
@@ -78,6 +78,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timer.timeout.connect(self.plot_widget.update)
         self.timer.start(10)
 
+
+    # Updates the console text
     # https://stackoverflow.com/questions/44432276
     def update_text(self, text):
         cursor = self.console.textCursor()
@@ -86,6 +88,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.console.setTextCursor(cursor)
         self.console.ensureCursorVisible()
 
+
+    # Toggles recording in the Sensor interface and updates the UI to reflect it
     def toggle_recording(self):
         self.plot_widget.sensor.toggle_recording()
 
@@ -95,10 +99,14 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.toggle_button.setText("Start Recording")
 
+
+    # Clears plots and data
     def reset_recording(self):
         self.plot_widget.sensor.reset_recording()
         self.toggle_button.setText("Start Recording")
 
+
+    # Saves all position data since the last reset
     def export_csv(self):
         filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Export data", "export.csv", "CSV files (*.csv)")
 

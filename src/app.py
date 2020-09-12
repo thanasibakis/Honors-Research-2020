@@ -1,3 +1,5 @@
+# The program entrypoint: python3 src/app.py
+
 from PySide2 import QtCore, QtWidgets, QtGui
 import sys, traceback
 
@@ -6,6 +8,7 @@ from MainWindow import MainWindow
 from ErrorWindow import ErrorWindow
 from Sensor import Sensor
 import config
+
 
 if __name__ == "__main__":
     try:
